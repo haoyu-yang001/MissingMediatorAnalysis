@@ -5,8 +5,8 @@ Version: 0.1.0
 Authors@R: person("Haoyu", "Yang", email = "haoyuyang@hsph.harvard.edu", role = c("aut", "cre"))
 Description: Product-of-coefficients mediation analysis when the mediator,
     and optionally the outcome, are partially missing at random given fully
-    observed synthetic surrogates. Sequential synthetic surrogate (SynSurr)
-    analysis estimates both paths from three least-squares fits that use all
+    observed synthetic surrogates. SynMediation (sequential synthetic surrogate
+    analysis) estimates both paths from three least-squares fits that use all
     subjects through the surrogates. Alternatives for the mediator-outcome
     path include the efficient augmented inverse probability weighted (AIPW)
     estimator of Qin, Zhang and Leung (2017) and its combination with

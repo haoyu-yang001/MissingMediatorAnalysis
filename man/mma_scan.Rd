@@ -21,7 +21,7 @@ proteins).}
 \item{surrogates}{character vector of surrogate columns, one per mediator.}
 \item{outcome, covariates, outcome_surrogate}{as in \code{\link{mma}}.}
 \item{auxiliary}{optional fully observed auxiliary columns added to every
-mediator's surrogate (sequential SynSurr only; see \code{\link{mma}}).}
+mediator's surrogate (SynMediation only; see \code{\link{mma}}).}
 \item{...}{further arguments to \code{\link{mma}}, e.g. \code{outcome_method},
 \code{mediator_method}, \code{mc_draws}.}
 \item{n_cores}{number of forked cores (\code{parallel::mclapply}). Exposures

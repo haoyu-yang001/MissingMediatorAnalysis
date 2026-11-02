@@ -4,7 +4,7 @@
 #' @param row.names,optional ignored.
 #' @param ... ignored.
 #' @return A one-row data frame with sample sizes, path estimates, effects,
-#'   tests and, for sequential SynSurr, the decomposition of
+#'   tests and, for SynMediation, the decomposition of
 #'   \eqn{\hat\beta_M} into its direct and surrogate parts and the partial
 #'   \eqn{R^2} of the mediator on the surrogates.
 #' @export
@@ -49,7 +49,7 @@ as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
 #'   mediator (in the same order).
 #' @param outcome,covariates,outcome_surrogate as in \code{\link{mma}}.
 #' @param auxiliary optional fully observed auxiliary columns added to every
-#'   mediator's surrogate (sequential SynSurr only; see \code{\link{mma}}).
+#'   mediator's surrogate (SynMediation only; see \code{\link{mma}}).
 #' @param ... further arguments to \code{\link{mma}} (e.g.
 #'   \code{outcome_method}, \code{mediator_method}, \code{mc_draws}).
 #' @param n_cores number of cores (forked with \code{parallel::mclapply}; 1

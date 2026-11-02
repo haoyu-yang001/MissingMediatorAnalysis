@@ -1,4 +1,4 @@
-#' Diagnostics for sequential SynSurr
+#' Diagnostics for SynMediation
 #'
 #' Checks the working assumptions of the default estimator for one pathway:
 #' \describe{
@@ -14,7 +14,7 @@
 #'     \eqn{(Z, S)} and for observing the outcome given \eqn{(Z, S, M)} among
 #'     subjects with the mediator: Wald z of the surrogates (and mediator),
 #'     area under the ROC curve and range of fitted probabilities.}
-#'   \item{hausman}{test of sequential SynSurr against complete-case analysis
+#'   \item{hausman}{test of SynMediation against complete-case analysis
 #'     for \eqn{\alpha_A} and \eqn{\beta_M}, using the difference of their
 #'     influence functions. Under MAR given the surrogates both are consistent
 #'     only if missingness does not depend on the surrogates, so a significant

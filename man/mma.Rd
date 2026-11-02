@@ -11,7 +11,7 @@ Product-of-coefficients mediation analysis of
 \eqn{Y = \beta_0 + \beta_A A + \beta_M M + X^\top\beta_X + \epsilon_Y} when the
 mediator, and optionally the outcome, are partially missing and synthetic
 surrogates are observed for everyone. By default both paths are estimated by
-sequential SynSurr (\code{outcome_method = "SeqSynSurr"}), the maximum
+SynMediation (\code{outcome_method = "SeqSynSurr"}), the maximum
 likelihood estimator of the factorized Gaussian model
 \eqn{f(S \mid Z) f(M \mid S, Z) f(Y \mid M, S, Z)}, with \eqn{S} the surrogate
 of \eqn{M} (and of \eqn{Y}, if given) and \eqn{Z = (1, A, X)}. The function

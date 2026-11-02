@@ -5,8 +5,8 @@ Mediation analysis with a partially missing mediator and outcome.
 `MissingMediatorAnalysis` estimates the exposure → mediator → outcome indirect effect (product of
 coefficients) when the mediator, and optionally the outcome, are missing at random given fully
 observed synthetic surrogates (predictions of the missing variables from data available for
-everyone). The proposed **sequential SynSurr** estimator uses all subjects through three
-least-squares fits:
+everyone). The proposed method, **SynMediation**, extends synthetic surrogate (SynSurr) analysis to
+mediation and uses all subjects through three least-squares fits:
 
 1. surrogates on the exposure and covariates (all *n* subjects);
 2. mediator on surrogates, exposure and covariates (subjects with the mediator);
@@ -29,7 +29,7 @@ or from a local copy: `R CMD INSTALL MissingMediatorAnalysis`.
 
 | Function | Purpose |
 |---|---|
-| `mma()` | Full mediation analysis from a data frame (sequential SynSurr by default). |
+| `mma()` | Full mediation analysis from a data frame (SynMediation by default, `outcome_method = "SeqSynSurr"`). |
 | `mma_scan()` | Many exposures × mediators (e.g. thousands of proteins), one row per pair; errors and warnings are recorded instead of stopping; optional parallel cores. |
 | `mma_diagnostics()` | Checks of the working assumptions for one pathway (surrogate strength, linearity, constant variance, missingness model, comparison with complete case, nonlinear sensitivity fit). |
 | `fit_synsurr()` | Exposure–mediator path alone (SynSurr or complete case). |
@@ -88,8 +88,8 @@ NIE    0.01633 0.00344 4.748 2.059e-06 0.009591 0.02308
 ```
 
 Only 1,369 of the 10,000 simulated subjects have both the mediator and the outcome; all 10,000
-contribute. Without `outcome_surrogate` (fully observed outcome) the same call runs sequential
-SynSurr with the mediator surrogate only.
+contribute. Without `outcome_surrogate` (fully observed outcome) the same call runs
+SynMediation with the mediator surrogate only.
 
 ### Scanning many exposures
 

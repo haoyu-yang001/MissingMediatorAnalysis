@@ -9,7 +9,7 @@
 #' surrogate of \eqn{Y} (\code{outcome_surrogate}).
 #'
 #' By default (\code{outcome_method = "SeqSynSurr"}) both paths come from
-#' sequential SynSurr: three least-squares fits, (1) each surrogate on
+#' SynMediation: three least-squares fits, (1) each surrogate on
 #' \eqn{(1, A, X)} in everyone, (2) \eqn{M} on the surrogates and
 #' \eqn{(1, A, X)} among subjects with \eqn{M}, and (3) \eqn{Y} on
 #' \eqn{M}, the surrogates and \eqn{(1, A, X)} among subjects with both

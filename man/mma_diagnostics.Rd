@@ -1,7 +1,7 @@
 \name{mma_diagnostics}
 \alias{mma_diagnostics}
 \alias{print.mma_diagnostics}
-\title{Diagnostics for sequential SynSurr}
+\title{Diagnostics for SynMediation}
 \description{
 Checks the working assumptions of the default estimator for one pathway:
 surrogate quality (partial \eqn{R^2} of the mediator on the surrogates given

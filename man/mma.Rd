@@ -30,7 +30,8 @@ mma(data, exposure, mediator, outcome, surrogate, covariates = NULL,
     na_action = c("omit", "fail"), keep_IF = TRUE, verbose = TRUE,
     basis = c("linear", "poly2", "ns3"), basis_outcome = FALSE,
     outcome_family = c("gaussian", "binomial"),
-    missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15)
+    missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15,
+    weighting = c("none", "ipw"))
 }
 \arguments{
 \item{data}{a data frame.}
@@ -45,7 +46,7 @@ character columns are expanded into indicators. Covariates that are constant
 within the subset with an observed mediator (or with both observed) are not
 identified there; their coefficients are reported as \code{NA}, which does not
 affect \eqn{\alpha_A} or \eqn{\beta_M}.}
-\item{ps_vars}{variables (besides an intercept) for the propensity model and the working model of \eqn{E[M \mid W]}; defaults to \code{c(outcome, exposure, covariates, surrogate)}, or \code{c(exposure, covariates, surrogate, outcome_surrogate)} when the outcome has missing values. Not used by \code{"SeqSynSurr"} or \code{"SynSurr"} for a continuous outcome. For a binary outcome the missingness models always contain the surrogates, \code{outcome_surrogate}, the exposure and the covariates (and the outcome as set by \code{missing_order}); further fully observed variables named in \code{ps_vars} are added to them like auxiliary surrogate columns.}
+\item{ps_vars}{variables (besides an intercept) for the propensity model and the working model of \eqn{E[M \mid W]}; defaults to \code{c(outcome, exposure, covariates, surrogate)}, or \code{c(exposure, covariates, surrogate, outcome_surrogate)} when the outcome has missing values. Not used by \code{"SeqSynSurr"} (unless \code{weighting = "ipw"}) or \code{"SynSurr"} for a continuous outcome. For a binary outcome the missingness models always contain the surrogates, \code{outcome_surrogate}, the exposure and the covariates (and the outcome as set by \code{missing_order}); further fully observed variables named in \code{ps_vars} are added to them like auxiliary surrogate columns. The same holds for weighted SynMediation (\code{weighting = "ipw"}), whose missingness models never contain the outcome (ordering M -> Y; \eqn{P(R_Y = 1)} given the mediator instead); the extra \code{ps_vars} columns then also enter steps 1 to 3 like auxiliary surrogate columns.}
 \item{mediator_method}{\code{"SynSurr"} or complete-case \code{"CC"}.}
 \item{outcome_method}{\code{"SeqSynSurr"} (default; requires
 \code{mediator_method = "SynSurr"}, whose fit it replaces by SynSurr with all
@@ -62,8 +63,9 @@ mediator's missingness does not depend on the outcome given the regressors) or
 weights (see Details).}
 \item{conf_level}{confidence level.}
 \item{ps_trim}{optional lower bound for fitted propensities. For a binary
-outcome it is applied to each missingness model separately (a sensitivity
-analysis for extreme weights; the influence functions ignore it).}
+outcome and for \code{weighting = "ipw"} it is applied to each missingness
+model separately (a sensitivity analysis for extreme weights; the influence
+functions ignore it).}
 \item{mc_draws}{number of Monte Carlo draws for the NIE confidence interval;
 \code{0} skips it.}
 \item{na_action}{\code{"omit"} (default) drops, with a message, rows with
@@ -89,12 +91,22 @@ than the linear fit.}
 \code{"binomial"} for a 0/1 outcome (logistic outcome model; see Details).
 With \code{"binomial"}, \code{outcome_method} must be \code{"SeqSynSurr"},
 \code{"IPW"} or \code{"CC"} and \code{basis} must be \code{"linear"}.}
+\item{weighting}{for a continuous outcome with \code{outcome_method =
+"SeqSynSurr"}: \code{"none"} (default, the SynMediation closed form) or
+\code{"ipw"}, weighted SynMediation: steps 2 and 3 are fitted by weighted
+least squares with inverse probabilities of being observed, which makes the
+estimator target-preserving under missingness at random whatever the relation
+between the surrogates and the mediator and outcome (see Details). Not
+available for a binary outcome (whose estimator is already weighted) or other
+\code{outcome_method}s.}
 \item{missing_order}{for a binary outcome with \code{"SeqSynSurr"} or
 \code{"IPW"}: \code{"auto"} (default), \code{"YM"} or \code{"MY"}, the
 ordering of the sequential missing-at-random assumption (see Details).
 \code{"auto"} uses \code{"MY"} when every subject with the outcome also has the
 mediator and the outcome is partially missing, and \code{"YM"} otherwise. The
-ordering and the missingness models are stated by \code{print()}.}
+ordering and the missingness models are stated by \code{print()}. With
+\code{weighting = "ipw"} only \code{"auto"} or \code{"MY"} is allowed (the
+ordering M -> Y is always used).}
 \item{firth}{for a binary outcome, use Firth's penalized likelihood in the
 logistic fits among subjects with mediator and outcome: the weighted fit of
 \code{"IPW"} (which also starts the AIPW iterations), the working model of the
@@ -119,6 +131,54 @@ depend on the surrogates, and when the conditional means in steps 2 and 3 are
 linear with constant residual variance in step 2. Subjects with an outcome but
 no mediator are treated as missing the outcome. With no missing data it
 reproduces least squares exactly.
+
+\strong{Weighted SynMediation} (\code{weighting = "ipw"}, continuous outcome).
+The targets are the full-cohort least-squares projections of \eqn{M} on
+\eqn{Z} and of \eqn{Y} on \eqn{(Z, M)}, which are also the complete-case
+targets when data are missing completely at random. Two logistic missingness
+models (probabilities of being observed) are fitted by maximum likelihood:
+\eqn{\pi_M = P(R_M = 1 \mid S, Z)} in all subjects, and, among subjects with
+the mediator, \eqn{\lambda_Y = P(R_Y = 1 \mid R_M = 1, M, S, Z)}, where
+\eqn{S} are the \code{surrogate} columns (including auxiliary columns such as
+an attendance score), \code{outcome_surrogate} if given, and further fully
+observed variables named in \code{ps_vars} (which are then also used like
+auxiliary surrogate columns in steps 1 to 3); \eqn{Z} contains the exposure and
+the covariates. Step 2 is weighted by \eqn{w_1 = R_M/\hat\pi_M}, step 3 by
+\eqn{w_2 = R_M R_Y/(\hat\pi_M\hat\lambda_Y)}, and the residual variance of
+step 2 is the \eqn{w_1}-weighted mean squared residual; step 1 and the
+closed-form formulas are unchanged (\eqn{\alpha = \gamma + \kappa\delta},
+\eqn{\beta_M = \omega_M + \nu^\top\omega_S}). Each fit then estimates the
+full-cohort projection, so the estimator is consistent when the missingness
+models are correct, whatever the relation between the surrogates and
+\eqn{(M, Y)} (nonlinear, heteroskedastic); the surrogates affect precision
+only. It is also consistent when the conditions of the unweighted closed form
+hold (linear steps 2 and 3, constant variance in step 2). The ordering is
+M -> Y: the mediator's missingness may depend on \eqn{(S, Z)}, the outcome's
+(among subjects with the mediator) on \eqn{(M, S, Z)}; subjects with the
+outcome but no mediator are treated as missing the outcome. With a complete
+outcome only \eqn{\pi_M} is modelled (it does not use the outcome) and step 3
+uses the step-2 weights; with a complete mediator only \eqn{\lambda_Y}. Weights
+proportional to the observation indicators (e.g. missing completely at random
+with constant fitted probabilities) give exactly the unweighted estimates, and
+with no missing data the fit reproduces least squares. \code{basis =
+"poly2"} or \code{"ns3"} is supported (the same weighted steps). The influence
+functions of the weighted fits are residualised on the scores of the
+missingness models (estimation of the weights) and stacked with those of
+\eqn{\alpha} as in the unweighted case. Under missingness at random given the
+surrogates the weighted estimator is typically less precise than the closed
+form (the price of not assuming linear working regressions); use it as a
+sensitivity analysis. The fit stores \code{weight_diagnostics}:
+\code{n_M}, \code{n_Y}, \code{n_MY}, the largest weight and effective sample
+size \eqn{(\sum w)^2/\sum w^2} of step 2 (\code{max_weight_M}, \code{ess_M})
+and step 3 (\code{max_weight}, \code{ess}), the smallest fitted probabilities
+of being observed among the observed (\code{min_pi_M}, \code{min_pi_Y}, the
+latter for \eqn{\lambda_Y}), \code{converged} (missingness models), and the
+largest single-subject shares of the estimated variances of
+\eqn{\hat\alpha_A} (\code{max_if_share_alpha}, row \code{most_influential_alpha})
+and \eqn{\hat\beta_M} (\code{max_if_share_beta}, row \code{most_influential}).
+When a share exceeds 20\% the fit warns, also in \code{print()}; then report
+sensitivity analyses with \code{ps_trim} and without that subject.
+\code{\link{mma_diagnostics}} refers to the unweighted closed form.
 
 \strong{Binary outcome.} With \code{outcome_family = "binomial"} the outcome
 model is \eqn{logit P(Y = 1 \mid A, X, M) = \beta_0 + \beta_A A + \beta_M M +
@@ -199,7 +259,11 @@ for the NIE), \code{conf_level}, \code{vcov}, \code{cor_ab},
 \code{n_obs_both}, \code{outcome_family} and, for a binary outcome,
 \code{events} (events among subjects with mediator and outcome),
 \code{effects_or}, \code{binary_diagnostics} and \code{missing_data} (the
-ordering used and a description of the missingness models).}
+ordering used and a description of the missingness models). For a continuous
+outcome with \code{"SeqSynSurr"}, \code{weighting}; with \code{weighting =
+"ipw"} also \code{weight_diagnostics} and \code{missing_data}, and
+\code{fits$outcome$weights} holds the step-2 and step-3 weights (dropped with
+\code{keep_IF = FALSE}).}
 \examples{
 dat <- sim_mma_data(n = 2000, miss_rate = 0.5, rho = 0.8)
 fit <- mma(dat, exposure = "A", mediator = "M", outcome = "Y",
@@ -210,6 +274,10 @@ dat2 <- sim_mma_data(n = 2000, miss_rate = 0.75, rho = 0.8,
                      rho_Y = 0.8, miss_rate_Y = 0.5)
 mma(dat2, exposure = "A", mediator = "M", outcome = "Y", surrogate = "S",
     covariates = "X", outcome_surrogate = "S_Y")
+# Weighted SynMediation (missingness models instead of linear working models)
+mma(dat2, exposure = "A", mediator = "M", outcome = "Y", surrogate = "S",
+    covariates = "X", outcome_surrogate = "S_Y", weighting = "ipw",
+    mc_draws = 1e4)
 # Binary outcome (sequential AIPW)
 dat2$Yb <- ifelse(is.na(dat2$Y), NA, as.numeric(dat2$Y > quantile(dat2$Y, 0.9, na.rm = TRUE)))
 mma(dat2, exposure = "A", mediator = "M", outcome = "Yb", surrogate = "S",

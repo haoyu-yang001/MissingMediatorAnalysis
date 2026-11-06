@@ -9,13 +9,21 @@
 #'   \eqn{R^2} of the mediator on the surrogates. For a binary outcome fitted by
 #'   sequential AIPW or IPW, also the missing-data ordering, the largest weight,
 #'   the effective sample size and the largest single-subject share of the
-#'   variance of \eqn{\hat\beta_M}.
+#'   variance of \eqn{\hat\beta_M}. For a continuous outcome with
+#'   SynMediation, \code{weighting} (\code{"none"} or \code{"ipw"}); for
+#'   weighted SynMediation also the ordering, the largest weight and effective
+#'   sample size of step 3 (\code{max_weight}, \code{ess}) and step 2
+#'   (\code{max_weight_M}, \code{ess_M}), the smallest probability of
+#'   observing the mediator (\code{min_pi_M}) and the largest single-subject
+#'   shares of the variances of \eqn{\hat\alpha_A} and \eqn{\hat\beta_M}.
 #' @export
 as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
   e <- x$effects
   g <- function(r, c) e[r, c]
   st <- x$fits$outcome$steps
   bd <- x$binary_diagnostics
+  wd <- x$weight_diagnostics
+  if (is.null(bd)) bd <- wd
   data.frame(
     exposure = x$vars$exposure, mediator = x$vars$mediator,
     method_mediator = x$methods[["mediator"]], method_outcome = x$methods[["outcome"]],
@@ -38,6 +46,11 @@ as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
     max_weight = if (is.null(bd)) NA else bd$max_weight,
     ess = if (is.null(bd)) NA else bd$ess,
     max_if_share_beta = if (is.null(bd)) NA else bd$max_if_share_beta,
+    weighting = if (is.null(x$weighting)) NA else x$weighting,
+    max_weight_M = if (is.null(wd)) NA else wd$max_weight_M,
+    ess_M = if (is.null(wd)) NA else wd$ess_M,
+    min_pi_M = if (is.null(bd)) NA else bd$min_pi_M,
+    max_if_share_alpha = if (is.null(wd)) NA else wd$max_if_share_alpha,
     row.names = NULL)
 }
 

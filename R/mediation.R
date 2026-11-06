@@ -87,6 +87,27 @@
 #' analyses with \code{ps_trim} and without the most influential subject. With
 #' no missing data the fit reproduces \code{lm} and \code{glm}.
 #'
+#' \strong{Weighted SynMediation} (\code{weighting = "ipw"}, continuous outcome,
+#' \code{"SeqSynSurr"}). Steps 2 and 3 are fitted by weighted least squares with
+#' \eqn{w_1 = R_M/\hat\pi_M} and \eqn{w_2 = R_M R_Y/(\hat\pi_M\hat\lambda_Y)},
+#' and the step-2 residual variance is the \eqn{w_1}-weighted mean squared
+#' residual; step 1 and the closed-form formulas are unchanged. The missingness
+#' models (probabilities of being observed) are logistic:
+#' \eqn{\pi_M = P(R_M = 1 \mid S, Z)} in all subjects and
+#' \eqn{\lambda_Y = P(R_Y = 1 \mid R_M = 1, M, S, Z)} among subjects with the
+#' mediator (ordering M -> Y; with a complete outcome only \eqn{\pi_M}, which does
+#' not use the outcome, and step 3 uses \eqn{w_1}), with \eqn{S} the
+#' \code{surrogate} columns (including auxiliaries), \code{outcome_surrogate} and
+#' extra \code{ps_vars}. The estimator then targets the full-cohort
+#' (complete-case) projections whatever the relation between the surrogates and
+#' \eqn{(M, Y)}; its validity depends only on the missingness models. Constant
+#' weights give the unweighted closed form. The influence functions are
+#' residualised on the missingness-model scores. The fit stores
+#' \code{weight_diagnostics} (largest weights and effective sample sizes of steps
+#' 2 and 3, smallest probabilities of being observed, largest single-subject
+#' shares of the variances of \eqn{\hat\alpha_A} and \eqn{\hat\beta_M}) and warns
+#' when a share exceeds 20\%.
+#'
 #' @param data a data frame.
 #' @param exposure,mediator,outcome,surrogate column names. The mediator may
 #'   contain \code{NA}, and so may the outcome if \code{outcome_surrogate} is
@@ -161,6 +182,9 @@
 #'   AIPW equation is solved over all subjects and is not penalized.
 #' @param gh_nodes number of Gauss-Hermite points used to integrate over the
 #'   working model of a missing mediator (binary outcome).
+#' @param weighting for a continuous outcome with \code{"SeqSynSurr"}:
+#'   \code{"none"} (default, the closed form) or \code{"ipw"} (weighted
+#'   SynMediation, see Details; \code{ps_trim} bounds each fitted probability).
 #' @return An object of class \code{"mma"}. Besides the estimates, the tests of
 #'   \eqn{H_0: NIE = 0} include the p-value matching the Monte Carlo interval,
 #'   \eqn{2\min\{P(\alpha^*\beta^* < 0), P(\alpha^*\beta^* > 0)\}} under the
@@ -195,13 +219,20 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
                 outcome_surrogate = NULL, na_action = c("omit", "fail"),
                 keep_IF = TRUE, verbose = TRUE, basis = c("linear", "poly2", "ns3"),
                 basis_outcome = FALSE, outcome_family = c("gaussian", "binomial"),
-                missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15) {
+                missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15,
+                weighting = c("none", "ipw")) {
   mediator_method <- match.arg(mediator_method)
   outcome_method <- match.arg(outcome_method)
   basis <- match.arg(basis)
   outcome_family <- match.arg(outcome_family)
   missing_order <- match.arg(missing_order)
+  weighting <- match.arg(weighting)
   binom <- outcome_family == "binomial"
+  ipw <- weighting == "ipw"
+  if (ipw && (binom || outcome_method != "SeqSynSurr"))
+    stop("weighting = \"ipw\" (weighted SynMediation) is only available with outcome_family = \"gaussian\" and outcome_method = \"SeqSynSurr\"; the binary-outcome estimator is already weighted")
+  if (ipw && missing_order == "YM")
+    stop("weighted SynMediation uses the ordering M -> Y (missing_order = \"auto\" or \"MY\")")
   data <- as.data.frame(data)
   y_missing <- anyNA(data[[outcome]])
   if (basis != "linear" && outcome_method != "SeqSynSurr")
@@ -233,6 +264,13 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
       c(exposure, covariates, surrogate, outcome_surrogate) else
       c(outcome, exposure, covariates, surrogate)
     if (y_missing && outcome %in% ps_vars) stop("ps_vars cannot contain a missing outcome")
+    if (ipw) {
+      if (mediator %in% ps_vars) stop("ps_vars cannot contain the mediator")
+      # As for a binary outcome: extra predictors of missingness are used like
+      # auxiliary surrogate columns (ordering M -> Y: the outcome is not used).
+      ps_vars <- setdiff(ps_vars, c(exposure, covariates, surrogate, outcome_surrogate, outcome))
+      if (!length(ps_vars)) ps_vars <- NULL
+    }
   }
   if (!is.numeric(data[[exposure]])) stop("the exposure must be numeric")
   complete_vars <- unique(c(exposure, surrogate, covariates, outcome_surrogate,
@@ -246,7 +284,7 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
   S_Y <- if (is.null(outcome_surrogate)) NULL else data[[outcome_surrogate]]
   if (length(surrogate) > 1 && !outcome_method %in% c("SeqSynSurr", if (binom) "IPW"))
     stop("several surrogate columns are only supported by outcome_method = \"SeqSynSurr\"")
-  k_S <- length(surrogate) + !is.null(S_Y) + length(if (binom) ps_vars)
+  k_S <- length(surrogate) + !is.null(S_Y) + length(if (binom || ipw) ps_vars)
   .check_sizes(M, Y, ncol(Z), k_S * switch(basis, linear = 1, poly2 = 2, ns3 = 3), outcome_method)
   if (binom)
     .check_events(M, Y, ncol(Z) + if (outcome_method != "CC") k_S else 0, firth)
@@ -278,7 +316,21 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     colnames(Zt) <- c(colnames(Z), mediator)
     S <- cbind(as.matrix(data[, surrogate, drop = FALSE]), S_Y)
     colnames(S) <- c(surrogate, outcome_surrogate)
-    out <- .fit_seq_synsurr(Y, M, S, Z, Zt, basis, basis_outcome)
+    if (ipw) {
+      if (!is.null(ps_vars)) S <- cbind(S, as.matrix(data[, ps_vars, drop = FALSE]))
+      out <- .fit_seq_ipw(Y, M, S, Z, Zt, basis, basis_outcome, ps_trim = ps_trim,
+                          row_ids = rownames(data))
+      dg <- out$diagnostics
+      for (pth in c("alpha", "beta")) {
+        sh <- dg[[paste0("max_if_share_", pth)]]
+        if (sh > 0.2)
+          warning(sprintf("one subject (row %s) carries %.0f%% of the estimated variance of %s; check ps_trim and a fit without this subject",
+                          dg[[if (pth == "beta") "most_influential" else "most_influential_alpha"]],
+                          100 * sh, pth), call. = FALSE)
+      }
+    } else {
+      out <- .fit_seq_synsurr(Y, M, S, Z, Zt, basis, basis_outcome)
+    }
     med <- out$mediator
   } else {
     W <- .design(data, unique(ps_vars))
@@ -330,7 +382,7 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
   out_tab[rownames(out_tab) %in% out$aliased, ] <- NA
   out$mediator <- NULL                     # same as fits$mediator
   if (!keep_IF) {
-    med$IF <- NULL; out$IF <- NULL; out$components <- NULL
+    med$IF <- NULL; out$IF <- NULL; out$components <- NULL; out$weights <- NULL
   }
   structure(list(
     effects = effects, tests = tests, nie_ci = nie_ci, conf_level = conf_level,
@@ -345,7 +397,9 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     outcome_family = outcome_family,
     events = if (outcome_family == "binomial") sum(Y[!is.na(M)] == 1, na.rm = TRUE) else NULL,
     effects_or = if (outcome_family == "binomial") .or_table(effects, nie_ci) else NULL,
-    binary_diagnostics = out$diagnostics,
+    binary_diagnostics = if (binom) out$diagnostics,
+    weight_diagnostics = if (ipw) out$diagnostics,
+    weighting = if (outcome_method == "SeqSynSurr" && !binom) weighting,
     missing_data = if (!is.null(out$missing_order))
       list(order = out$missing_order, assumption = out$assumption),
     aliased = out$aliased,
@@ -396,6 +450,25 @@ print.mma <- function(x, digits = 4, ...) {
                 d$most_influential, if (isFALSE(d$converged)) "; AIPW equation did NOT converge" else ""))
     if (d$max_if_share_beta > 0.2 || d$events_MY < 50)
       cat(strwrap(paste0("CAUTION: ", if (d$events_MY < 50) sprintf("only %d events among subjects with mediator and outcome (unreliable below about 50). ", d$events_MY),
+                         if (d$max_if_share_beta > 0.2) sprintf("One subject (row %s) carries %.0f%% of the variance of beta. ", d$most_influential, 100 * d$max_if_share_beta),
+                         "Report sensitivity analyses: refit with ps_trim (e.g. 0.02) and without the most influential subject."),
+                  indent = 2, exdent = 4, width = 0.95 * getOption("width")), sep = "\n")
+  }
+  d <- x$weight_diagnostics
+  if (!is.null(d) && x$missing_data$order != "none") {
+    fmt <- function(v) if (is.na(v)) "(not modelled)" else format(signif(v, 3))
+    cat(sprintf("  weights, step 2 (mediator): max %.3g, effective sample size %.0f of %d with mediator\n",
+                d$max_weight_M, d$ess_M, d$n_M))
+    cat(sprintf("  weights, step 3 (outcome): max %.3g, effective sample size %.0f of %d with mediator and outcome\n",
+                d$max_weight, d$ess, d$n_MY))
+    cat(sprintf("  minimum probability of being observed: mediator %s, outcome given mediator %s\n",
+                fmt(d$min_pi_M), fmt(d$min_pi_Y)))
+    cat(sprintf("  largest single-subject share of Var(alpha): %.3f (row %s); of Var(beta): %.3f (row %s)%s\n",
+                d$max_if_share_alpha, d$most_influential_alpha, d$max_if_share_beta,
+                d$most_influential, if (isFALSE(d$converged)) "; a missingness model did NOT converge" else ""))
+    if (max(d$max_if_share_alpha, d$max_if_share_beta) > 0.2)
+      cat(strwrap(paste0("CAUTION: ",
+                         if (d$max_if_share_alpha > 0.2) sprintf("One subject (row %s) carries %.0f%% of the variance of alpha. ", d$most_influential_alpha, 100 * d$max_if_share_alpha),
                          if (d$max_if_share_beta > 0.2) sprintf("One subject (row %s) carries %.0f%% of the variance of beta. ", d$most_influential, 100 * d$max_if_share_beta),
                          "Report sensitivity analyses: refit with ps_trim (e.g. 0.02) and without the most influential subject."),
                   indent = 2, exdent = 4, width = 0.95 * getOption("width")), sep = "\n")

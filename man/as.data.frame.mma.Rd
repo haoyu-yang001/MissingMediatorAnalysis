@@ -10,7 +10,14 @@ tests (delta, joint significance and Monte Carlo p-values) and, for SynMediation
 outcome fitted by sequential AIPW or IPW, also the missing-data ordering
 (\code{missing_order}), the largest weight (\code{max_weight}), the effective
 sample size (\code{ess}) and the largest single-subject share of the variance
-of \eqn{\hat\beta_M} (\code{max_if_share_beta}).
+of \eqn{\hat\beta_M} (\code{max_if_share_beta}). For a continuous outcome
+with SynMediation, \code{weighting} (\code{"none"} or \code{"ipw"}); for
+weighted SynMediation also \code{missing_order}, the largest weight and
+effective sample size of step 3 (\code{max_weight}, \code{ess}) and of step 2
+(\code{max_weight_M}, \code{ess_M}), the smallest fitted probability of
+observing the mediator (\code{min_pi_M}, also for a binary outcome), and the
+largest single-subject shares of the variances of \eqn{\hat\beta_M} and
+\eqn{\hat\alpha_A} (\code{max_if_share_alpha}).
 }
 \usage{
 \method{as.data.frame}{mma}(x, row.names = NULL, optional = FALSE, ...)

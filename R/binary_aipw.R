@@ -93,7 +93,7 @@
   if (!f$converged) warning("missingness (propensity) model did not converge", call. = FALSE)
   pr[use] <- f$fitted.values
   sc[use, ] <- (R[use] - pr[use]) * V[use, , drop = FALSE]
-  list(p = pr, score = sc)
+  list(p = pr, score = sc, converged = f$converged)
 }
 
 # Residualise influence functions on the missingness-model scores (estimation of the

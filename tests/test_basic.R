@@ -252,3 +252,90 @@ bad <- function(...) inherits(try(mma(dym, "A", "M", ..., outcome_family = "bino
 stopifnot(bad("M_full", "S", "X"), bad("Y", "S", "X", outcome_method = "Combined"),
           bad("Y", "S", "X", mediator_method = "CC"))
 cat("binary tests passed\n")
+
+# Weighted SynMediation (continuous outcome, weighting = "ipw").
+set.seed(11)
+nw <- 6000
+gw <- data.frame(A = rnorm(nw), X = rnorm(nw), aux = rnorm(nw))
+gw$M_full <- 0.3 * gw$A + 0.2 * gw$X + rnorm(nw)
+gw$S <- gw$M_full + 0.5 * gw$M_full^2 + rnorm(nw)           # nonlinear surrogate
+gw$Y_full <- 0.4 * gw$M_full + 0.2 * gw$A + 0.1 * gw$X + rnorm(nw)
+gw$S_Y <- gw$Y_full + rnorm(nw)
+rM <- rbinom(nw, 1, plogis(-1 + 0.5 * gw$S + 0.5 * gw$aux + 0.3 * gw$A)) == 1
+rY <- rM & rbinom(nw, 1, plogis(0.5 + 0.4 * gw$S_Y - 0.3 * gw$M_full)) == 1
+gw$M <- ifelse(rM, gw$M_full, NA); gw$Y <- ifelse(rY, gw$Y_full, NA)
+# (w1) weighting = "none" is the default closed form.
+fw0 <- mma(gw, "A", "M", "Y", c("S", "aux"), "X", outcome_surrogate = "S_Y", mc_draws = 0)
+fw0n <- mma(gw, "A", "M", "Y", c("S", "aux"), "X", outcome_surrogate = "S_Y", mc_draws = 0,
+            weighting = "none")
+stopifnot(identical(fw0$effects, fw0n$effects), fw0$methods[["outcome"]] == "SeqSynSurr",
+          is.null(fw0$weight_diagnostics))
+# (w2) Weights proportional to the observation indicators reproduce the closed form (estimates
+#      exactly; standard errors up to the numerical Jacobian).
+Zw <- cbind("(Intercept)" = 1, A = gw$A, X = gw$X)
+Sw <- cbind(S = gw$S, aux = gw$aux, S_Y = gw$S_Y)
+fcs <- MissingMediatorAnalysis:::.fit_seq_synsurr
+c0 <- fcs(gw$Y, gw$M, Sw, Zw, cbind(Zw, M = 0))
+c1 <- fcs(gw$Y, gw$M, Sw, Zw, cbind(Zw, M = 0), w1 = 3.7 * rM, w2 = 0.2 * rY)
+stopifnot(max(abs(c0$coef - c1$coef)) < 1e-12, max(abs(sqrt(diag(c1$vcov) / diag(c0$vcov)) - 1)) < 1e-8,
+          max(abs(c0$mediator$coef - c1$mediator$coef)) < 1e-12)
+# (w3) mma(weighting = "ipw") equals a hand-coded version: logistic missingness models,
+#      weighted least squares in steps 2 and 3, closed-form formulas.
+fw <- suppressWarnings(mma(gw, "A", "M", "Y", c("S", "aux"), "X", outcome_surrogate = "S_Y",
+                           weighting = "ipw", mc_draws = 0))
+piM <- fitted(glm(rM ~ Sw + Zw - 1, family = binomial))
+lamY <- rep(1, nw)
+lamY[rM] <- fitted(glm(rY[rM] ~ gw$M[rM] + Sw[rM, ] + Zw[rM, ] - 1, family = binomial))
+w1 <- rM / piM; w2 <- rY / (piM * lamY)
+kap <- qr.coef(qr(Zw), Sw); SigS <- crossprod(Sw - Zw %*% kap) / nw
+l2 <- lm.wfit(cbind(Sw, Zw)[rM, ], gw$M[rM], w1[rM])
+s2 <- sum(w1[rM] * l2$residuals^2) / sum(w1[rM])
+l3 <- lm.wfit(cbind(M = gw$M, Sw, Zw)[rY, ], gw$Y[rY], w2[rY])
+dl <- l2$coefficients[1:3]; om <- l3$coefficients
+alpha_h <- l2$coefficients[-(1:3)] + drop(kap %*% dl)
+nu <- drop(SigS %*% dl) / drop(crossprod(dl, SigS %*% dl) + s2)
+bM_h <- om[[1]] + sum(nu * om[2:4])
+bZ_h <- om[5:7] + drop(kap %*% om[2:4]) - alpha_h * sum(nu * om[2:4])
+stopifnot(max(abs(fw$fits$mediator$coef - alpha_h)) < 1e-10,
+          abs(fw$effects["beta", "estimate"] - bM_h) < 1e-10,
+          max(abs(fw$fits$outcome$coef[1:3] - bZ_h)) < 1e-10,
+          fw$missing_data$order == "MY", fw$weighting == "ipw",
+          abs(fw$weight_diagnostics$max_weight - max(w2)) < 1e-8,
+          abs(fw$weight_diagnostics$ess_M - sum(w1)^2 / sum(w1^2)) < 1e-6)
+# stacked influence functions: the NIE variance is the delta-method variance
+Vw <- fw$vcov; aw <- fw$effects["alpha", "estimate"]
+stopifnot(abs(bM_h^2 * Vw["alpha", "alpha"] + aw^2 * Vw["beta", "beta"] +
+              2 * aw * bM_h * Vw["alpha", "beta"] - Vw["NIE", "NIE"]) < 1e-12)
+# the influence functions are orthogonal to the missingness-model scores
+scw <- cbind((rM - piM) * cbind(Sw, Zw), (rY - lamY) * rM * cbind(ifelse(rM, gw$M, 0), Sw, Zw))
+stopifnot(max(abs(crossprod(scw, fw$fits$outcome$IF))) < 1e-6 * nw)
+# (w4) Complete data: weighted SynMediation is ordinary least squares (also with a basis).
+dfw <- transform(gw, M = M_full, Y = Y_full)
+for (b in c("linear", "poly2")) {
+  fc <- mma(dfw, "A", "M", "Y", c("S", "aux"), "X", outcome_surrogate = "S_Y",
+            weighting = "ipw", basis = b, mc_draws = 0)
+  stopifnot(abs(fc$effects["beta", "estimate"] - coef(lm(Y ~ A + X + M, dfw))[["M"]]) < 1e-10,
+            abs(fc$effects["alpha", "estimate"] - coef(lm(M ~ A + X, dfw))[["A"]]) < 1e-10,
+            fc$missing_data$order == "none")
+}
+# (w5) Complete outcome: only P(mediator observed) is modelled; step 3 uses the step-2 weights.
+fyc <- suppressWarnings(mma(transform(gw, Y = Y_full), "A", "M", "Y", c("S", "aux"), "X",
+                            weighting = "ipw", mc_draws = 0))
+stopifnot(is.na(fyc$weight_diagnostics$min_pi_Y),
+          abs(fyc$weight_diagnostics$ess - fyc$weight_diagnostics$ess_M) < 1e-8)
+# (w6) ps_trim bounds the weights; basis, as.data.frame, scan, print; invalid calls.
+ft <- suppressWarnings(mma(gw, "A", "M", "Y", c("S", "aux"), "X", outcome_surrogate = "S_Y",
+                           weighting = "ipw", ps_trim = 0.1, basis = "ns3", mc_draws = 0))
+stopifnot(ft$weight_diagnostics$max_weight <= 1 / 0.1^2 + 1e-10,
+          ft$weight_diagnostics$max_weight_M <= 1 / 0.1 + 1e-10,
+          all(is.finite(ft$effects$se[1:5])))
+dfr <- as.data.frame(fw)
+stopifnot(dfr$weighting == "ipw", is.finite(dfr$max_if_share_alpha), is.finite(dfr$ess_M))
+scw <- mma_scan(gw, c("A", "X"), "M", "S", "Y", outcome_surrogate = "S_Y", auxiliary = "aux",
+                weighting = "ipw", mc_draws = 0)
+stopifnot(nrow(scw) == 2, all(scw$status != "error"), all(scw$weighting == "ipw"))
+invisible(capture.output(print(fw), summary(ft)))
+badw <- function(...) inherits(try(mma(gw, "A", "M", "Y", "S", "X", outcome_surrogate = "S_Y",
+                                       weighting = "ipw", mc_draws = 0, ...), silent = TRUE), "try-error")
+stopifnot(badw(outcome_method = "SurrAIPW"), badw(missing_order = "YM"), badw(ps_vars = "M"))
+cat("weighted SynMediation tests passed\n")

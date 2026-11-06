@@ -17,22 +17,33 @@
 # Subjects with Y but no M are treated as missing Y (monotone pattern).
 # Influence functions of the least-squares fits and the residual (co)variances
 # are stacked and mapped by the delta method (numerical Jacobian).
-.fit_seq_synsurr <- function(Y, M, S, Z, Zt, basis = "linear", basis_outcome = FALSE) {
+#
+# Weighted SynMediation: w1 (step 2, zero without M) and w2 (step 3, zero
+# without M and Y) replace the indicators R1 and R2; steps 2 and 3 are then
+# weighted least squares and sigma2_M is the weighted mean squared step-2
+# residual. With w1 = R1 / pi_M and w2 = R1 R2 / (pi_M lambda_Y) the fits
+# estimate the full-cohort projections and the estimator is target-preserving
+# (see .fit_seq_ipw, which also accounts for the estimated weights). Weights
+# proportional to R1 and R2 give exactly the unweighted estimator.
+.fit_seq_synsurr <- function(Y, M, S, Z, Zt, basis = "linear", basis_outcome = FALSE,
+                             w1 = NULL, w2 = NULL) {
   S <- as.matrix(S)
   n <- nrow(Z); p <- ncol(Z); k <- ncol(S)
   if (is.null(colnames(S)) || any(colnames(S) == "")) colnames(S) <- paste0("S", seq_len(k))
-  if (basis != "linear") return(.fit_seq_basis(Y, M, S, Z, Zt, basis, basis_outcome))
+  if (basis != "linear") return(.fit_seq_basis(Y, M, S, Z, Zt, basis, basis_outcome, w1, w2))
   R1 <- as.numeric(!is.na(M))
   R2 <- R1 * !is.na(Y)
+  if (is.null(w1)) w1 <- R1
+  if (is.null(w2)) w2 <- R2
   Mz <- ifelse(R1 == 1, M, 0)   # zero-filled M only enters rows with weight 0
 
   f1 <- lapply(seq_len(k), function(j) .wls_if(Z, S[, j]))
   kappa <- sapply(f1, `[[`, "coef")
   E_S <- sapply(f1, `[[`, "resid")
   Sigma_S <- crossprod(E_S) / n
-  f2 <- .wls_if(cbind(S, Z), M, w = R1)
-  sigma2_M <- sum(f2$resid^2) / sum(R1)
-  f3 <- .wls_if(cbind(M = Mz, S, Z), Y, w = R2)
+  f2 <- .wls_if(cbind(S, Z), M, w = w1)
+  sigma2_M <- sum(w1 * f2$resid^2) / sum(w1)
+  f3 <- .wls_if(cbind(M = Mz, S, Z), Y, w = w2)
   # The exposure, the surrogates and the mediator must be identified in every
   # fit; covariates aliased within a subset (e.g. a centre with no subject
   # observed) get coefficient 0, which leaves alpha_A and beta unaffected.
@@ -65,16 +76,17 @@
     j <- row(Sigma_S)[ix]; l <- col(Sigma_S)[ix]
     E_S[, j] * E_S[, l] - Sigma_S[j, l]
   }))
-  IF_s2 <- R1 * (f2$resid^2 - sigma2_M) * n / sum(R1)
+  IF_s2 <- w1 * (f2$resid^2 - sigma2_M) * n / sum(w1)
   IF_par <- cbind(do.call(cbind, lapply(f1, `[[`, "IF")), IF_Sig, f2$IF, IF_s2, f3$IF)
 
   est <- map(par)
   delta <- f2$coef[seq_len(k)]
   nu <- drop(Sigma_S %*% delta) / drop(crossprod(delta, Sigma_S %*% delta) + sigma2_M)
   names(nu) <- colnames(S)
-  # Partial R^2 of M on the surrogates given Z, among subjects with M.
-  rz <- .wls_if(Z, M, w = R1)$resid[R1 == 1]
-  partial_r2 <- 1 - sigma2_M / mean(rz^2)
+  # Partial R^2 of M on the surrogates given Z, among subjects with M
+  # (weighted by w1 in weighted SynMediation).
+  rz <- .wls_if(Z, M, w = w1)$resid
+  partial_r2 <- 1 - sigma2_M / .wmean(rz^2, w1)
   h <- 1e-5 * ifelse(par == 0, 1, abs(par))   # relative step
   Jac <- sapply(seq_along(par), function(j) {
     e <- replace(numeric(length(par)), j, h[j])
@@ -96,6 +108,9 @@
        aliased = aliased, n_obs_both = sum(R2))
 }
 
+# Weighted mean (the plain mean over the rows with w = 1 for 0/1 weights).
+.wmean <- function(v, w) if (all(w == 0 | w == 1)) mean(v[w == 1]) else sum(w * v) / sum(w)
+
 # Sequential SynSurr with a nonlinear mediator model in step 2,
 # E(M | S, Z) = B(S)'b + Z'g with B a quadratic ("poly2") or natural spline
 # ("ns3", 3 df) basis of each surrogate; step 3 is linear in S, or uses the
@@ -110,7 +125,8 @@
 # only through (mean over all - mean over observed) * (w_M - beta_M).
 # Influence function: averaging with the working models fixed, plus the
 # estimation of the step-2 and step-3 fits and of sigma2_M (numerical Jacobian).
-.fit_seq_basis <- function(Y, M, S, Z, Zt, basis = c("poly2", "ns3"), basis_outcome = FALSE) {
+.fit_seq_basis <- function(Y, M, S, Z, Zt, basis = c("poly2", "ns3"), basis_outcome = FALSE,
+                           w1 = NULL, w2 = NULL) {
   basis <- match.arg(basis)
   n <- nrow(Z); p <- ncol(Z); k <- ncol(S)
   B <- switch(basis,
@@ -119,12 +135,14 @@
       b <- unclass(splines::ns(S[, j], df = 3))[, 1:3, drop = FALSE]
       colnames(b) <- paste0(colnames(S)[j], "_ns", 1:3); b })))
   R1 <- as.numeric(!is.na(M)); R2 <- R1 * !is.na(Y)
+  if (is.null(w1)) w1 <- R1
+  if (is.null(w2)) w2 <- R2
   Mz <- ifelse(R1 == 1, M, 0)
 
-  X2 <- cbind(B, Z); f2 <- .wls_if(X2, M, w = R1)
-  sigma2_M <- sum(f2$resid^2) / sum(R1)
-  IF_s2 <- R1 * (f2$resid^2 - sigma2_M) * n / sum(R1)
-  X3 <- cbind(M = Mz, if (basis_outcome) B else S, Z); f3 <- .wls_if(X3, Y, w = R2)
+  X2 <- cbind(B, Z); f2 <- .wls_if(X2, M, w = w1)
+  sigma2_M <- sum(w1 * f2$resid^2) / sum(w1)
+  IF_s2 <- w1 * (f2$resid^2 - sigma2_M) * n / sum(w1)
+  X3 <- cbind(M = Mz, if (basis_outcome) B else S, Z); f3 <- .wls_if(X3, Y, w = w2)
   key <- c(colnames(Z)[2], "M", if (basis == "poly2") colnames(S))
   bad <- intersect(c(f2$aliased, f3$aliased), key)
   if (length(bad))
@@ -165,7 +183,7 @@
   IF <- IF_fixed + IF_par %*% t(Jac)
   IF_a <- IF[, ia, drop = FALSE]; colnames(IF_a) <- colnames(Z)
   IF_b <- IF[, ib, drop = FALSE]; colnames(IF_b) <- colnames(Zt)
-  rz <- .wls_if(Z, M, w = R1)$resid[R1 == 1]
+  rz <- .wls_if(Z, M, w = w1)$resid
   list(coef = setNames(theta, colnames(Zt)), vcov = .vcov_if(IF_b), IF = IF_b,
        method = paste0("SeqSynSurr(", basis, if (basis_outcome) ", both steps", ")"),
        mediator = list(coef = setNames(alpha, colnames(Z)), IF = IF_a,
@@ -173,6 +191,78 @@
        steps = list(mean_model = f2$coef, sigma2_M = sigma2_M, omega = f3$coef,
                     beta_M_direct = f3$coef[["M"]],
                     beta_M_surrogate = theta[p + 1] - f3$coef[["M"]],
-                    partial_r2 = 1 - sigma2_M / mean(rz^2)),
+                    partial_r2 = 1 - sigma2_M / .wmean(rz^2, w1)),
        aliased = unique(c(f2$aliased, f3$aliased)), n_obs_both = sum(R2))
+}
+
+# Weighted SynMediation (continuous outcome, ordering M -> Y). Missingness
+# models (logistic, maximum likelihood):
+#   pi_M = P(R_M = 1 | S, Z) in all n subjects (if M is partially missing);
+#   lambda_Y = P(R_Y = 1 | R_M = 1, M, S, Z) among subjects with M (if some of
+#   them lack Y). Subjects with Y but no M are treated as missing Y.
+# Steps 2 and 3 of .fit_seq_synsurr are weighted by w1 = R_M / pi_M and
+# w2 = R_M R_Y / (pi_M lambda_Y) (w2 = w1 with a complete outcome); step 1 and
+# the closed-form formulas are unchanged. Every moment is then a full-cohort
+# moment estimated by inverse probability weighting, so the estimator targets
+# the full-cohort projections (the complete-case targets under MCAR) whatever
+# the relation between S and (M, Y); validity depends only on the missingness
+# models. It equals the sequential AIPW estimator with these weighted working
+# fits (all augmentation terms vanish). The influence functions are those of
+# the weighted closed form, residualised on the scores of the missingness
+# models (estimated weights); ps_trim bounds each fitted probability from
+# below (the influence functions ignore the trimming).
+.fit_seq_ipw <- function(Y, M, S, Z, Zt, basis = "linear", basis_outcome = FALSE,
+                         ps_trim = NULL, row_ids = NULL) {
+  S <- as.matrix(S)
+  n <- nrow(Z); p <- ncol(Z)
+  R1 <- !is.na(M); R2 <- R1 & !is.na(Y)
+  Mz <- ifelse(R1, M, 0)
+  score <- NULL; pi1 <- rep(1, n); lam <- rep(1, n); conv <- TRUE
+  pi_fit <- !all(R1); lam_fit <- any(R1 & !R2)
+  if (pi_fit) {
+    ps1 <- .bin_propensity(cbind(S, Z), R1)
+    pi1 <- ps1$p; score <- ps1$score; conv <- ps1$converged
+  }
+  if (lam_fit) {
+    ps2 <- .bin_propensity(cbind(M = Mz, S, Z), R2, use = R1)
+    lam <- ps2$p; score <- cbind(score, ps2$score); conv <- conv && ps2$converged
+  }
+  if (!is.null(ps_trim)) { pi1 <- pmax(pi1, ps_trim); lam <- pmax(lam, ps_trim) }
+  w1 <- R1 / pi1; w2 <- R2 / (pi1 * lam)
+  fit <- .fit_seq_synsurr(Y, M, S, Z, Zt, basis, basis_outcome, w1 = w1, w2 = w2)
+  if (!is.null(score)) {
+    fit$IF[] <- .residualize(fit$IF, score)
+    fit$mediator$IF[] <- .residualize(fit$mediator$IF, score)
+    fit$vcov <- .vcov_if(fit$IF); fit$mediator$vcov <- .vcov_if(fit$mediator$IF)
+  }
+  order <- if (!pi_fit && !lam_fit) "none" else "MY"
+  sv <- paste(colnames(S), collapse = ", ")
+  assumption <- if (order == "none")
+    "no missing mediator or outcome: weights are 1 (full-data least squares)" else
+    paste0(if (pi_fit) sprintf("P(mediator observed) logistic in (%s, exposure, covariates)", sv) else
+             "mediator complete",
+           if (lam_fit) sprintf("; P(outcome observed | mediator observed) logistic in (mediator, %s, exposure, covariates)", sv) else
+             if (all(!is.na(Y))) "; outcome complete" else
+               "; every subject with the mediator has the outcome",
+           if (any(!is.na(Y) & !R1) && !all(!is.na(Y)))
+             "; subjects with the outcome but no mediator are treated as missing the outcome" else "")
+  share <- function(v) max(v^2) / sum(v^2)
+  ia <- fit$mediator$IF[, 2]; ib <- fit$IF[, p + 1]
+  rid <- function(i) if (is.null(row_ids)) i else row_ids[i]
+  fit$diagnostics <- list(
+    n_M = sum(R1), n_Y = sum(!is.na(Y)), n_MY = sum(R2),
+    max_weight_M = max(w1), ess_M = sum(w1)^2 / sum(w1^2),
+    max_weight = max(w2), ess = sum(w2)^2 / sum(w2^2),
+    min_pi_M = if (pi_fit) min(pi1[R1]) else NA_real_,
+    min_pi_Y = if (lam_fit) min(lam[R2]) else NA_real_,
+    max_if_share_alpha = share(ia), most_influential_alpha = rid(which.max(ia^2)),
+    max_if_share_beta = share(ib), most_influential = rid(which.max(ib^2)),
+    converged = conv)
+  fit$method <- paste0(sub("^SeqSynSurr", "SeqSynSurr-IPW", fit$method),
+                       if (order == "MY") " (M -> Y)" else "")
+  fit$mediator$method <- paste0(sub("^SynSurr", "SynSurr-IPW", fit$mediator$method))
+  fit$missing_order <- order
+  fit$assumption <- assumption
+  fit$weights <- list(w1 = w1, w2 = w2)
+  fit
 }

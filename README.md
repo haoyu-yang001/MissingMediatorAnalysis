@@ -67,6 +67,7 @@ missing surrogate inputs (e.g. by the median) before computing the surrogates.
 | `vcov`, `cor_ab` | joint covariance of the six effects; estimated corr(alpha, beta) |
 | `mediator_model`, `outcome_model` | all coefficients of the two models with SE, z, p and CI |
 | `n`, `n_obs`, `n_obs_Y`, `n_obs_both` | total; with mediator; with outcome; with both |
+| `weight_diagnostics`, `missing_data` | weighted SynMediation (`weighting = "ipw"`): weight diagnostics and missingness models |
 
 ## Example
 
@@ -91,6 +92,33 @@ NIE    0.01633 0.00344 4.748 2.059e-06 0.009591 0.02308
 Only 1,369 of the 10,000 simulated subjects have both the mediator and the outcome; all 10,000
 contribute. Without `outcome_surrogate` (fully observed outcome) the same call runs
 SynMediation with the mediator surrogate only.
+
+### Weighted SynMediation (sensitivity analysis)
+
+The closed form above needs, under missingness at random given the surrogates, that steps 2 and 3
+are linear regressions. `weighting = "ipw"` removes this requirement: steps 2 and 3 are fitted by
+weighted least squares with inverse probabilities of being observed (logistic missingness models
+P(mediator observed | surrogates, exposure, covariates) in everyone and
+P(outcome observed | mediator, surrogates, exposure, covariates) among subjects with the mediator),
+and all formulas are otherwise unchanged. The estimator then targets the same associations as a
+complete-case analysis under data missing completely at random, whatever the relation between the
+surrogates and the measurements; its validity depends only on the missingness models, and with
+equal weights it is the closed form. Expect larger standard errors.
+
+```r
+fit_w <- mma(dat, exposure = "A", mediator = "M", outcome = "Y", surrogate = "S",
+             covariates = "X", outcome_surrogate = "S_Y", weighting = "ipw")
+fit_w$weight_diagnostics   # largest weights, effective sample sizes, smallest probabilities,
+                           # largest single-subject shares of Var(alpha) and Var(beta)
+```
+
+The missingness models use the `surrogate` columns (including auxiliary columns such as an
+attendance score), `outcome_surrogate`, the exposure and the covariates (plus extra `ps_vars`); the
+outcome is never used (ordering mediator -> outcome; subjects with the outcome but no mediator count as
+missing the outcome). With a complete outcome only the mediator model is fitted. `ps_trim` bounds
+each fitted probability; `basis = "poly2"`/`"ns3"` is supported. When one subject carries more than
+20% of Var(alpha) or Var(beta) the fit warns; refit with `ps_trim` and without that subject.
+`mma_scan(..., weighting = "ipw")` adds the weight diagnostics to each row.
 
 ### Scanning many exposures
 

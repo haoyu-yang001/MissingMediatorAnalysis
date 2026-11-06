@@ -28,7 +28,9 @@ mma(data, exposure, mediator, outcome, surrogate, covariates = NULL,
                        "AIPWnew", "AIPW", "IPW", "CC"),
     conf_level = 0.95, ps_trim = NULL, mc_draws = 1e5, outcome_surrogate = NULL,
     na_action = c("omit", "fail"), keep_IF = TRUE, verbose = TRUE,
-    basis = c("linear", "poly2", "ns3"), basis_outcome = FALSE)
+    basis = c("linear", "poly2", "ns3"), basis_outcome = FALSE,
+    outcome_family = c("gaussian", "binomial"), binary_method = c("proj", "closed"),
+    firth = TRUE, gh_nodes = 15)
 }
 \arguments{
 \item{data}{a data frame.}
@@ -78,6 +80,20 @@ residual variance of step 2 enters the estimator, estimated among subjects with
 \code{heteroskedasticity} part of \code{\link{mma_diagnostics}}. With a strongly
 heteroskedastic step 2 the nonlinear bases are not necessarily more reliable
 than the linear fit.}
+\item{outcome_family}{\code{"gaussian"} (default, linear outcome model) or
+\code{"binomial"} for a 0/1 outcome (logistic outcome model; see Details).
+With \code{"binomial"}, \code{outcome_method} must be \code{"SeqSynSurr"} or
+\code{"CC"} and \code{basis} must be \code{"linear"}.}
+\item{binary_method}{for a binary outcome with \code{"SeqSynSurr"}:
+\code{"proj"} (default), the exact full-cohort logistic regression after
+filling in the missing values, or \code{"closed"}, a faster closed-form
+approximation that is accurate only for a rare outcome with weakly predictive
+surrogates (it overestimates \eqn{|\beta_M|} otherwise).}
+\item{firth}{for a binary outcome, use Firth's penalized likelihood in the
+logistic regression among subjects with mediator and outcome (step 3, and the
+complete-case fit). Recommended for rare outcomes.}
+\item{gh_nodes}{number of Gauss-Hermite points used to integrate over a
+missing mediator (\code{binary_method = "proj"}).}
 \item{outcome_surrogate}{optional column name of a synthetic surrogate of the
 outcome (e.g. an earlier measurement), observed for everyone. With a missing
 outcome it is required by \code{"SurrAIPW"} and \code{"SynSurr"}; for
@@ -95,6 +111,24 @@ depend on the surrogates, and when the conditional means in steps 2 and 3 are
 linear with constant residual variance in step 2. Subjects with an outcome but
 no mediator are treated as missing the outcome. With no missing data it
 reproduces least squares exactly.
+
+\strong{Binary outcome.} With \code{outcome_family = "binomial"} the outcome
+model is \eqn{logit P(Y = 1 \mid A, X, M) = \beta_0 + \beta_A A + \beta_M M +
+X^\top\beta_X}, with \eqn{\beta} defined as the full-cohort logistic projection,
+so \eqn{\beta_M} is a log odds ratio per unit of the mediator and
+\eqn{NIE = \alpha_A\beta_M} is on the log odds ratio scale (for a rare outcome it
+approximates the natural indirect effect on that scale). Steps 1 and 2 are
+unchanged; step 3 is a (Firth) logistic regression of \eqn{Y} on
+\eqn{(M, S, Z)} among subjects with both observed. With \code{binary_method =
+"proj"}, the logistic regression of \eqn{Y} on \eqn{(Z, M)} is then fitted to
+all subjects: those with \eqn{M} but not \eqn{Y} contribute the step-3
+probability as a fractional outcome, and those without \eqn{M} contribute
+\code{gh_nodes} weighted records at the Gauss-Hermite points of the step-2
+normal model, each with its step-3 probability. Few events matter only in
+step 3; the function stops when there are no events and warns when there are
+fewer than 5 per parameter. The output adds \code{effects_or}, the odds ratios
+of \eqn{\beta_M}, NIE, NDE and TE (log-OR scale sum). With no missing data and
+\code{firth = FALSE} it reproduces \code{glm(..., family = binomial)} exactly.
 
 The tests of \eqn{H_0: NIE = 0} are the delta-method (Sobel-type) Wald
 test, the joint-significance test \eqn{\max(p_\alpha, p_\beta)} and the
@@ -116,8 +150,10 @@ number generator; call \code{set.seed()} beforehand for reproducible limits.
 \code{tests}, \code{nie_ci} (delta-method and Monte Carlo confidence intervals
 for the NIE), \code{conf_level}, \code{vcov}, \code{cor_ab},
 \code{mediator_model}, \code{outcome_model}, \code{fits}, \code{n},
-\code{n_obs} (observed mediator), \code{n_obs_Y} (observed outcome) and
-\code{n_obs_both}.}
+\code{n_obs} (observed mediator), \code{n_obs_Y} (observed outcome),
+\code{n_obs_both}, \code{outcome_family} and, for a binary outcome,
+\code{events} (events among subjects with mediator and outcome) and
+\code{effects_or}.}
 \examples{
 dat <- sim_mma_data(n = 2000, miss_rate = 0.5, rho = 0.8)
 fit <- mma(dat, exposure = "A", mediator = "M", outcome = "Y",
@@ -128,4 +164,9 @@ dat2 <- sim_mma_data(n = 2000, miss_rate = 0.75, rho = 0.8,
                      rho_Y = 0.8, miss_rate_Y = 0.5)
 mma(dat2, exposure = "A", mediator = "M", outcome = "Y", surrogate = "S",
     covariates = "X", outcome_surrogate = "S_Y")
+# Binary outcome (logistic outcome model)
+dat2$Yb <- ifelse(is.na(dat2$Y), NA, as.numeric(dat2$Y > quantile(dat2$Y, 0.9, na.rm = TRUE)))
+mma(dat2, exposure = "A", mediator = "M", outcome = "Yb", surrogate = "S",
+    covariates = "X", outcome_surrogate = "S_Y", outcome_family = "binomial",
+    mc_draws = 1e4)
 }

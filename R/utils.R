@@ -164,3 +164,14 @@
                     n_both, p + k + 1), call. = FALSE)
   invisible(NULL)
 }
+
+# Event counts for a binary outcome among subjects with mediator and outcome.
+.check_events <- function(M, Y, q, firth = TRUE) {
+  both <- !is.na(M) & !is.na(Y)
+  ev <- sum(Y[both] == 1); nev <- sum(Y[both] == 0)
+  if (ev == 0 || nev == 0) stop("the outcome has no events (or no non-events) among subjects with mediator and outcome")
+  if (min(ev, nev) < 5 * (q + 1))
+    warning(sprintf("%d events for %d parameters in the outcome model among subjects with mediator and outcome (< 5 per parameter)%s",
+                    min(ev, nev), q + 1, if (firth) "" else "; consider firth = TRUE"), call. = FALSE)
+  invisible(NULL)
+}

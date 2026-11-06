@@ -120,9 +120,19 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
                 conf_level = 0.95, ps_trim = NULL, mc_draws = 1e5,
                 outcome_surrogate = NULL, na_action = c("omit", "fail"),
                 keep_IF = TRUE, verbose = TRUE, basis = c("linear", "poly2", "ns3"),
-                basis_outcome = FALSE) {
+                basis_outcome = FALSE, outcome_family = c("gaussian", "binomial"),
+                binary_method = c("proj", "closed"), firth = TRUE, gh_nodes = 15) {
   mediator_method <- match.arg(mediator_method)
   basis <- match.arg(basis)
+  outcome_family <- match.arg(outcome_family)
+  binary_method <- match.arg(binary_method)
+  if (outcome_family == "binomial") {
+    yv <- data[[outcome]]
+    if (any(!is.na(yv) & !(yv %in% c(0, 1)))) stop("a binomial outcome must be coded 0/1 (NA if missing)")
+    if (!match.arg(outcome_method) %in% c("SeqSynSurr", "CC"))
+      stop("with outcome_family = \"binomial\", outcome_method must be \"SeqSynSurr\" or \"CC\"")
+    if (basis != "linear") stop("basis is only available for outcome_family = \"gaussian\"")
+  }
   if (basis != "linear" && match.arg(outcome_method) != "SeqSynSurr")
     stop("basis is only used by outcome_method = \"SeqSynSurr\"")
   if (basis_outcome && basis == "linear") stop("basis_outcome = TRUE needs basis = \"poly2\" or \"ns3\"")
@@ -155,8 +165,22 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     stop("several surrogate columns are only supported by outcome_method = \"SeqSynSurr\"")
   k_S <- length(surrogate) + !is.null(S_Y)
   .check_sizes(M, Y, ncol(Z), k_S * switch(basis, linear = 1, poly2 = 2, ns3 = 3), outcome_method)
+  if (outcome_family == "binomial")
+    .check_events(M, Y, ncol(Z) + if (outcome_method == "SeqSynSurr") k_S else 0, firth)
 
-  if (outcome_method == "SeqSynSurr") {
+  if (outcome_family == "binomial") {
+    Zt <- cbind(Z, ifelse(is.na(M), 0, M))
+    colnames(Zt) <- c(colnames(Z), mediator)
+    if (outcome_method == "SeqSynSurr") {
+      S <- cbind(as.matrix(data[, surrogate, drop = FALSE]), S_Y)
+      colnames(S) <- c(surrogate, outcome_surrogate)
+      out <- .fit_seq_binary(Y, M, S, Z, Zt, binary_method, firth, gh_nodes)
+      med <- out$mediator
+    } else {
+      med <- fit_synsurr(M, data[[surrogate[1]]], Z, mediator_method = mediator_method)
+      out <- .fit_logit_cc(Y, M, Zt, firth)
+    }
+  } else if (outcome_method == "SeqSynSurr") {
     # Both paths from one factorized fit that uses both surrogates.
     Zt <- cbind(Z, ifelse(is.na(M), 0, M))
     colnames(Zt) <- c(colnames(Z), mediator)
@@ -224,11 +248,24 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     n = n, n_obs = sum(!is.na(M)), n_obs_Y = sum(!is.na(Y)),
     n_obs_both = sum(!is.na(M) & !is.na(Y)),
     n_Y_without_M = sum(is.na(M) & !is.na(Y)),
+    outcome_family = outcome_family,
+    events = if (outcome_family == "binomial") sum(Y[!is.na(M)] == 1, na.rm = TRUE) else NULL,
+    effects_or = if (outcome_family == "binomial") .or_table(effects, nie_ci) else NULL,
     aliased = out$aliased,
     vars = list(exposure = exposure, mediator = mediator, outcome = outcome,
                 surrogate = surrogate, outcome_surrogate = outcome_surrogate,
                 covariates = covariates, ps_vars = ps_vars),
     call = match.call()), class = "mma")
+}
+
+# Odds-ratio scale (exp) of beta, NIE, NDE and TE for a binary outcome; the
+# Monte Carlo interval of the NIE is used when available.
+.or_table <- function(effects, nie_ci) {
+  r <- c("beta", "NIE", "NDE", "TE")
+  e <- effects[r, c("estimate", "lower", "upper")]
+  if (nrow(nie_ci) > 1) e["NIE", c("lower", "upper")] <- unlist(nie_ci[2, c("lower", "upper")])
+  out <- exp(e); names(out) <- c("OR", "lower", "upper")
+  out
 }
 
 #' @export
@@ -245,9 +282,17 @@ print.mma <- function(x, digits = 4, ...) {
   if (length(x$aliased))
     cat("  not identified within the observed subset (coefficient set to NA):",
         paste(x$aliased, collapse = ", "), "\n")
-  cat(sprintf("  exposure-mediator: %s;  mediator-outcome: %s\n\n",
+  cat(sprintf("  exposure-mediator: %s;  mediator-outcome: %s\n",
               x$methods[["mediator"]], x$methods[["outcome"]]))
+  if (identical(x$outcome_family, "binomial"))
+    cat(sprintf("  binary outcome: %d events among subjects with mediator and outcome; beta, NIE, NDE, TE on the log odds ratio scale\n",
+                x$events))
+  cat("\n")
   print(signif(x$effects, digits))
+  if (!is.null(x$effects_or)) {
+    cat("\nOdds ratios\n")
+    print(signif(x$effects_or, digits))
+  }
   cat(sprintf("\n%g%% confidence intervals for the NIE\n", 100 * x$conf_level))
   print(x$nie_ci, digits = digits, row.names = FALSE)
   cat("\nTests of H0: NIE = 0\n")

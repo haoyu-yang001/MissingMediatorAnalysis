@@ -15,7 +15,9 @@ as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
   data.frame(
     exposure = x$vars$exposure, mediator = x$vars$mediator,
     method_mediator = x$methods[["mediator"]], method_outcome = x$methods[["outcome"]],
+    outcome_family = if (is.null(x$outcome_family)) "gaussian" else x$outcome_family,
     n = x$n, n_M = x$n_obs, n_Y = x$n_obs_Y, n_both = x$n_obs_both,
+    events = if (is.null(x$events)) NA else x$events,
     alpha = g("alpha", "estimate"), se_alpha = g("alpha", "se"), p_alpha = g("alpha", "p"),
     beta = g("beta", "estimate"), se_beta = g("beta", "se"), p_beta = g("beta", "p"),
     nie = g("NIE", "estimate"), se_nie = g("NIE", "se"),

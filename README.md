@@ -14,7 +14,8 @@ mediation and uses all subjects through three least-squares fits:
 
 Inference uses the stacked influence functions of both paths, so the covariance between the two
 paths is accounted for; the indirect effect has delta-method and Monte Carlo confidence intervals.
-The package depends only on base R.
+The outcome can be continuous (linear model, default) or binary (`outcome_family = "binomial"`,
+logistic model; see below). The package depends only on base R.
 
 ## Installation
 
@@ -102,6 +103,28 @@ res <- mma_scan(data, exposures = G,          # n x (number of proteins) matrix
                 mc_draws = 1e4, n_cores = 32, seed = 1)
 mma_diagnostics(fit, data)
 ```
+
+### Binary outcome
+
+For a 0/1 outcome (e.g. COPD), set `outcome_family = "binomial"`. The mediator path is unchanged;
+the outcome model is logistic, so `beta`, `NIE`, `NDE` and `TE` are on the log odds ratio scale and
+`fit$effects_or` gives odds ratios. Step 3 is a logistic regression among subjects with mediator
+and outcome, with Firth's penalty by default (`firth = TRUE`) because the number of events is
+often small there. The full-cohort logistic regression of the outcome on exposure, covariates and
+mediator is then fitted to all subjects after filling in what is missing: the step-3 probability
+replaces a missing outcome, and a missing mediator is integrated over the step-2 normal model with
+Gauss-Hermite quadrature (`binary_method = "proj"`, default). `binary_method = "closed"` is a faster
+closed-form approximation for rare outcomes with weakly predictive surrogates.
+
+```r
+fit <- mma(data, exposure = "protein", mediator = "MFI", outcome = "COPD",
+           surrogate = c("S_MFI", "attendance_score"), covariates = covs,
+           outcome_surrogate = "S_COPD", outcome_family = "binomial", mc_draws = 1e4)
+fit$effects_or
+```
+
+`mma_scan()` passes `outcome_family` and the other arguments to `mma()`; its output includes
+`outcome_family` and `events`. `mma_diagnostics()` is available for continuous outcomes only.
 
 ## Reference
 

@@ -47,6 +47,7 @@
 #' @export
 mma_diagnostics <- function(fit, data) {
   v <- fit$vars
+  if (identical(fit$outcome_family, "binomial")) stop("mma_diagnostics is implemented for a continuous outcome only")
   if (!startsWith(fit$methods[["outcome"]], "SeqSynSurr")) stop("diagnostics are for outcome_method = \"SeqSynSurr\"")
   data <- .drop_incomplete(as.data.frame(data),
                            unique(c(v$exposure, v$surrogate, v$covariates, v$outcome_surrogate)),

@@ -1,7 +1,7 @@
 Package: MissingMediatorAnalysis
 Type: Package
 Title: Mediation Analysis with a Partially Missing Mediator and Outcome
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: person("Haoyu", "Yang", email = "haoyuyang@hsph.harvard.edu", role = c("aut", "cre"))
 Description: Product-of-coefficients mediation analysis when the mediator,
     and optionally the outcome, are partially missing at random given fully
@@ -12,7 +12,9 @@ Description: Product-of-coefficients mediation analysis when the mediator,
     estimator of Qin, Zhang and Leung (2017) and its combination with
     complete-case regression. Inference on the indirect effect uses the
     stacked influence functions of both paths, so the cross-path covariance
-    is accounted for.
+    is accounted for. Binary outcomes are supported with a logistic outcome
+    model (Firth-penalized among subjects with mediator and outcome, and
+    integrated over the missing mediator for everyone else).
 License: GPL (>= 3)
 Encoding: UTF-8
 Depends: R (>= 4.0.0)

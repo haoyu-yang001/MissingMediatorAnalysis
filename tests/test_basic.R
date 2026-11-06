@@ -163,3 +163,30 @@ s2 <- mma_scan(d10, G[, 1, drop = FALSE], "M", "S", "Y", "X", "S_Y", mc_draws = 
 stopifnot(identical(s1$mc_lo, s2$mc_lo))
 
 cat("all tests passed\n")
+
+# Binary outcome (logistic outcome model).
+set.seed(7)
+db <- sim_mma_data(n = 4000, miss_rate = 0.6, rho = 0.8, rho_Y = 0.6, miss_rate_Y = 0.4)
+db$Yb <- ifelse(is.na(db$Y), NA, as.numeric(db$Y > quantile(db$Y, 0.85, na.rm = TRUE)))
+# (a) With no missing data and firth = FALSE, proj reproduces glm.
+dfull <- transform(db, M = M_full)
+dfull$Yb <- as.numeric(dfull$Y_full > quantile(dfull$Y_full, 0.85))
+fb0 <- mma(dfull, "A", "M", "Yb", "S", "X", outcome_family = "binomial", firth = FALSE, mc_draws = 0)
+g0 <- glm(Yb ~ A + X + M, binomial, dfull)
+stopifnot(abs(fb0$effects["beta", "estimate"] - coef(g0)[["M"]]) < 1e-7)
+stopifnot(abs(fb0$effects["NDE", "estimate"] - coef(g0)[["A"]]) < 1e-7)
+# (b) Complete-case ML logistic equals glm on complete cases.
+fcc <- mma(db, "A", "M", "Yb", "S", "X", outcome_family = "binomial", outcome_method = "CC",
+           mediator_method = "CC", firth = FALSE, mc_draws = 0)
+gcc <- glm(Yb ~ A + X + M, binomial, db[!is.na(db$M) & !is.na(db$Yb), ])
+stopifnot(abs(fcc$effects["beta", "estimate"] - coef(gcc)[["M"]]) < 1e-7)
+# (c) Proposed fit runs, proj and closed are close for this outcome, OR table present.
+fb <- mma(db, "A", "M", "Yb", "S", "X", outcome_surrogate = "S_Y", outcome_family = "binomial", mc_draws = 0)
+fbc <- mma(db, "A", "M", "Yb", "S", "X", outcome_surrogate = "S_Y", outcome_family = "binomial",
+           binary_method = "closed", mc_draws = 0)
+stopifnot(is.finite(fb$effects["NIE", "se"]), nrow(fb$effects_or) == 4,
+          abs(fb$effects["beta", "estimate"] - fbc$effects["beta", "estimate"]) < 3 * fb$effects["beta", "se"])
+# (d) Non-binary outcome is rejected.
+stopifnot(inherits(try(mma(db, "A", "M", "Y", "S", "X", outcome_surrogate = "S_Y",
+                           outcome_family = "binomial"), silent = TRUE), "try-error"))
+cat("binary tests passed\n")

@@ -6,12 +6,16 @@
 #' @return A one-row data frame with sample sizes, path estimates, effects,
 #'   tests and, for SynMediation, the decomposition of
 #'   \eqn{\hat\beta_M} into its direct and surrogate parts and the partial
-#'   \eqn{R^2} of the mediator on the surrogates.
+#'   \eqn{R^2} of the mediator on the surrogates. For a binary outcome fitted by
+#'   sequential AIPW or IPW, also the missing-data ordering, the largest weight,
+#'   the effective sample size and the largest single-subject share of the
+#'   variance of \eqn{\hat\beta_M}.
 #' @export
 as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
   e <- x$effects
   g <- function(r, c) e[r, c]
   st <- x$fits$outcome$steps
+  bd <- x$binary_diagnostics
   data.frame(
     exposure = x$vars$exposure, mediator = x$vars$mediator,
     method_mediator = x$methods[["mediator"]], method_outcome = x$methods[["outcome"]],
@@ -30,6 +34,10 @@ as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
     beta_direct = if (is.null(st)) NA else st$beta_M_direct,
     beta_surrogate = if (is.null(st)) NA else st$beta_M_surrogate,
     partial_r2 = if (is.null(st)) NA else st$partial_r2,
+    missing_order = if (is.null(x$missing_data)) NA else x$missing_data$order,
+    max_weight = if (is.null(bd)) NA else bd$max_weight,
+    ess = if (is.null(bd)) NA else bd$ess,
+    max_if_share_beta = if (is.null(bd)) NA else bd$max_if_share_beta,
     row.names = NULL)
 }
 

@@ -4,7 +4,7 @@
 #   alpha: least squares of M on Z = (1, A, X);
 #   theta = (beta_Z, beta_M): logistic projection of Y on x = (Z, M), the solution of
 #          E[x {Y - expit(x'theta)}] = 0;  NIE = alpha_A beta_M (log odds ratio scale).
-# Validity rests only on the attendance (missingness) models; the surrogates and the
+# Validity rests only on the missingness models; the surrogates and the
 # working prediction models (for M and for Y) affect precision, never the target.
 #
 # Two orderings of sequential missingness at random (S = surrogates and auxiliaries):
@@ -25,7 +25,7 @@
 # weighted logistic of Y on x).
 # Influence functions (n scale, theta_hat - theta = n^-1 sum IF_i) include the
 # working-model fits (finite-sample correction; their expected contribution is zero
-# under correct attendance models) and are residualised on the scores of the attendance
+# under correct missingness models) and are residualised on the scores of the missingness
 # models. The working prediction of M is clipped to the observed range of M.
 # Ported from binary_outcome/robust/R/synmed_robust.R (method "AIPW"/"IPW") and
 # binary_outcome/robust/ymiss/R/synmed_ymiss.R.
@@ -85,19 +85,19 @@
   })
 }
 
-# Logistic attendance model P(R = 1 | V) fitted on the rows `use`: fitted values
+# Logistic missingness model P(R = 1 | V) fitted on the rows `use`: fitted values
 # (1 elsewhere) and the score matrix (0 outside `use`).
 .bin_propensity <- function(V, R, use = rep(TRUE, length(R))) {
   n <- length(R); pr <- rep(1, n); sc <- matrix(0, n, ncol(V))
   f <- suppressWarnings(glm.fit(V[use, , drop = FALSE], as.numeric(R[use]), family = binomial()))
-  if (!f$converged) warning("attendance (propensity) model did not converge", call. = FALSE)
+  if (!f$converged) warning("missingness (propensity) model did not converge", call. = FALSE)
   pr[use] <- f$fitted.values
   sc[use, ] <- (R[use] - pr[use]) * V[use, , drop = FALSE]
   list(p = pr, score = sc)
 }
 
-# Residualise influence functions on the attendance-model scores (estimation of the
-# propensities); no-op without a fitted attendance model.
+# Residualise influence functions on the missingness-model scores (estimation of the
+# propensities); no-op without a fitted missingness model.
 .bin_res <- function(IF, score) if (is.null(score)) IF else .residualize(IF, score)
 
 # Keep the intercept and the non-constant columns.
@@ -113,7 +113,7 @@
   R1 <- !is.na(M); R2 <- R1 & !is.na(Y)
   Mz <- ifelse(R1, M, 0); Yz <- ifelse(R2, Y, 0)
 
-  ## attendance models and weights
+  ## missingness models and weights
   score <- NULL; pi1 <- rep(1, n); lam <- rep(1, n)
   if (!all(R1)) {
     ps1 <- .bin_propensity(cbind(S, Z), R1)
@@ -215,7 +215,7 @@
   Yz <- ifelse(RY, Y, 0); Mz <- ifelse(RM, M, 0)
   x <- cbind(Z, M = Mz)
 
-  ## attendance models and weights
+  ## missingness models and weights
   score <- NULL; piY <- rep(1, n); piM <- rep(1, n)
   if (!Ycomp) { ps <- .bin_propensity(cbind(S, Z), RY); piY <- ps$p; score <- ps$score }
   VM <- .bin_dropconst(cbind(Z, S, R_Y = as.numeric(RY), RY_Y = Yz))   # (S, Z, R_Y, R_Y Y)

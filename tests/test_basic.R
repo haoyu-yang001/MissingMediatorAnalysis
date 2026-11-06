@@ -191,8 +191,8 @@ gcc <- glm(Y ~ A + X + M, binomial, db[!is.na(db$M), ])
 stopifnot(max(abs(fcc$fits$outcome$coef - coef(gcc))) < 1e-7)
 # (c) Y complete, M missing at random given (S, A, X, Y): IPW with firth = FALSE equals a
 #     hand-coded inverse-probability-weighted fit, with the influence function
-#     residualised on the attendance-model score; the default (sequential AIPW) uses
-#     the ordering Y -> M with the outcome in the attendance model.
+#     residualised on the missingness-model score; the default (sequential AIPW) uses
+#     the ordering Y -> M with the outcome in the missingness model.
 fi <- mma(db, "A", "M", "Y", "S", "X", outcome_family = "binomial", outcome_method = "IPW",
           firth = FALSE, mc_draws = 0)
 R <- !is.na(db$M)

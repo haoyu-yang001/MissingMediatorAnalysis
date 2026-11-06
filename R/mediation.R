@@ -54,22 +54,22 @@
 #' and TE are on the log odds ratio scale. The default
 #' (\code{outcome_method = "SeqSynSurr"}) is a sequential augmented inverse
 #' probability weighted (AIPW) estimator. Its consistency rests only on the
-#' attendance (missingness) models: the surrogates and the working prediction
+#' missingness models: the surrogates and the working prediction
 #' models for \eqn{M} (normal linear in the surrogates and \eqn{Z}, clipped to
 #' the observed range of \eqn{M}) and for \eqn{Y} (logistic) affect precision,
-#' never the target. Both paths use the same attendance models;
+#' never the target. Both paths use the same missingness models;
 #' \eqn{\alpha} is the least-squares fit of \eqn{\hat m + w(M - \hat m)} on
 #' \eqn{Z}. \code{outcome_method = "IPW"} is the weighted complete-case fit with
 #' the same weights (Firth-penalized weighted logistic regression), and
 #' \code{"CC"} the unweighted complete-case fit. With \eqn{S} the
 #' \code{surrogate} columns, \code{outcome_surrogate} and any extra
-#' \code{ps_vars}, the attendance models are logistic and, by
+#' \code{ps_vars}, the missingness models are logistic and, by
 #' \code{missing_order}:
 #' \describe{
 #'   \item{\code{"YM"}}{(outcome recorded first; default when the outcome is
 #'     complete or when some subjects have the outcome but not the mediator)
 #'     \eqn{P(R_Y = 1 \mid S, Z)} and \eqn{P(R_M = 1 \mid S, Z, R_Y, R_Y Y)}, so
-#'     attendance for the mediator may depend on the recorded outcome. With a
+#'     whether the mediator is observed may depend on the recorded outcome. With a
 #'     complete outcome this is \eqn{P(R_M = 1 \mid S, Z, Y)}.}
 #'   \item{\code{"MY"}}{(monotone; default when every subject with the outcome
 #'     also has the mediator) \eqn{P(R_M = 1 \mid S, Z)} and
@@ -77,7 +77,7 @@
 #'     mediator are treated as missing the outcome.}
 #' }
 #' The influence functions include the working-model fits and the estimation
-#' of the attendance models. Simulations show reliable inference from about 50
+#' of the missingness models. Simulations show reliable inference from about 50
 #' events among subjects with mediator and outcome. The fit stores
 #' \code{binary_diagnostics} (events, largest weight, effective sample size,
 #' minimum propensities, convergence and the largest single-subject share of
@@ -105,7 +105,7 @@
 #'   and for the working model of \eqn{E[M \mid W]}. Defaults to
 #'   \code{c(outcome, exposure, covariates, surrogate)}, or to
 #'   \code{c(exposure, covariates, surrogate, outcome_surrogate)} when the
-#'   outcome has missing values. For a binary outcome the attendance models
+#'   outcome has missing values. For a binary outcome the missingness models
 #'   always contain the surrogates, \code{outcome_surrogate}, the exposure and
 #'   the covariates (and the outcome as set by \code{missing_order}); further
 #'   fully observed variables named in \code{ps_vars} are added to them like
@@ -122,7 +122,7 @@
 #'   or \code{"CC"}; the first two estimate both paths from the same weights.
 #' @param conf_level confidence level for intervals.
 #' @param ps_trim optional lower bound for the fitted propensity. For a binary
-#'   outcome it is applied to each attendance model separately (a sensitivity
+#'   outcome it is applied to each missingness model separately (a sensitivity
 #'   analysis for extreme weights; the influence functions ignore it).
 #' @param mc_draws number of Monte Carlo draws for the NIE interval; 0 skips it.
 #' @param na_action \code{"omit"} (default) drops, with a message, rows with
@@ -153,7 +153,7 @@
 #'   sequential missing-at-random ordering (see Details). \code{"auto"} uses
 #'   \code{"MY"} when every subject with the outcome also has the mediator and
 #'   the outcome is partially missing, and \code{"YM"} otherwise. The ordering
-#'   and the attendance models are stated by \code{print()}.
+#'   and the missingness models are stated by \code{print()}.
 #' @param firth for a binary outcome, use Firth's penalized likelihood in the
 #'   logistic fits among subjects with mediator and outcome (the weighted fit of
 #'   \code{"IPW"}, which also starts the AIPW iterations, the working model of
@@ -168,7 +168,7 @@
 #'   \code{as.data.frame()} for a one-row summary. For a binary outcome it also
 #'   contains \code{events}, \code{effects_or} (odds ratios),
 #'   \code{binary_diagnostics} and \code{missing_data} (the ordering used and
-#'   the attendance models).
+#'   the missingness models).
 #' @examples
 #' dat <- sim_mma_data(n = 2000, miss_rate = 0.5, rho = 0.8)
 #' fit <- mma(dat, exposure = "A", mediator = "M", outcome = "Y",
@@ -217,8 +217,8 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
       stop("with outcome_family = \"binomial\", outcome_method = \"", outcome_method,
            "\" estimates both paths from the same weighted fit; mediator_method = \"CC\" is only available with outcome_method = \"CC\"")
     if (mediator %in% ps_vars) stop("ps_vars cannot contain the mediator")
-    # Extra attendance predictors are used like auxiliary surrogate columns; the
-    # outcome enters the attendance models as set by missing_order.
+    # Extra predictors of missingness are used like auxiliary surrogate columns; the
+    # outcome enters the missingness models as set by missing_order.
     ps_vars <- setdiff(ps_vars, c(exposure, covariates, surrogate, outcome_surrogate, outcome))
     if (!length(ps_vars)) ps_vars <- NULL
   } else {

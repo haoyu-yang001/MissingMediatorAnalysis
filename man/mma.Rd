@@ -45,7 +45,7 @@ character columns are expanded into indicators. Covariates that are constant
 within the subset with an observed mediator (or with both observed) are not
 identified there; their coefficients are reported as \code{NA}, which does not
 affect \eqn{\alpha_A} or \eqn{\beta_M}.}
-\item{ps_vars}{variables (besides an intercept) for the propensity model and the working model of \eqn{E[M \mid W]}; defaults to \code{c(outcome, exposure, covariates, surrogate)}, or \code{c(exposure, covariates, surrogate, outcome_surrogate)} when the outcome has missing values. Not used by \code{"SeqSynSurr"} or \code{"SynSurr"} for a continuous outcome. For a binary outcome the attendance models always contain the surrogates, \code{outcome_surrogate}, the exposure and the covariates (and the outcome as set by \code{missing_order}); further fully observed variables named in \code{ps_vars} are added to them like auxiliary surrogate columns.}
+\item{ps_vars}{variables (besides an intercept) for the propensity model and the working model of \eqn{E[M \mid W]}; defaults to \code{c(outcome, exposure, covariates, surrogate)}, or \code{c(exposure, covariates, surrogate, outcome_surrogate)} when the outcome has missing values. Not used by \code{"SeqSynSurr"} or \code{"SynSurr"} for a continuous outcome. For a binary outcome the missingness models always contain the surrogates, \code{outcome_surrogate}, the exposure and the covariates (and the outcome as set by \code{missing_order}); further fully observed variables named in \code{ps_vars} are added to them like auxiliary surrogate columns.}
 \item{mediator_method}{\code{"SynSurr"} or complete-case \code{"CC"}.}
 \item{outcome_method}{\code{"SeqSynSurr"} (default; requires
 \code{mediator_method = "SynSurr"}, whose fit it replaces by SynSurr with all
@@ -58,11 +58,11 @@ for the outcome among subjects with an observed mediator; requires that the
 mediator's missingness does not depend on the outcome given the regressors) or
 \code{"CC"}. With \code{outcome_family = "binomial"}: \code{"SeqSynSurr"}
 (sequential AIPW, default), \code{"IPW"} (weighted complete case) or
-\code{"CC"}; the first two estimate both paths from the same attendance
+\code{"CC"}; the first two estimate both paths from the same inverse-probability
 weights (see Details).}
 \item{conf_level}{confidence level.}
 \item{ps_trim}{optional lower bound for fitted propensities. For a binary
-outcome it is applied to each attendance model separately (a sensitivity
+outcome it is applied to each missingness model separately (a sensitivity
 analysis for extreme weights; the influence functions ignore it).}
 \item{mc_draws}{number of Monte Carlo draws for the NIE confidence interval;
 \code{0} skips it.}
@@ -94,7 +94,7 @@ With \code{"binomial"}, \code{outcome_method} must be \code{"SeqSynSurr"},
 ordering of the sequential missing-at-random assumption (see Details).
 \code{"auto"} uses \code{"MY"} when every subject with the outcome also has the
 mediator and the outcome is partially missing, and \code{"YM"} otherwise. The
-ordering and the attendance models are stated by \code{print()}.}
+ordering and the missingness models are stated by \code{print()}.}
 \item{firth}{for a binary outcome, use Firth's penalized likelihood in the
 logistic fits among subjects with mediator and outcome: the weighted fit of
 \code{"IPW"} (which also starts the AIPW iterations), the working model of the
@@ -129,10 +129,10 @@ completely at random, so \eqn{\beta_M} is a log odds ratio per unit of the
 mediator and \eqn{NIE = \alpha_A\beta_M} is on the log odds ratio scale. The
 default (\code{outcome_method = "SeqSynSurr"}) is a sequential augmented
 inverse probability weighted (AIPW) estimator. Its consistency rests only on
-the attendance (missingness) models: the surrogates and the working
+the missingness models: the surrogates and the working
 prediction models for \eqn{M} (normal linear in the surrogates and \eqn{Z},
 clipped to the observed range of \eqn{M}) and for \eqn{Y} (logistic) affect
-precision, never the target. Both paths use the same attendance models:
+precision, never the target. Both paths use the same missingness models:
 \eqn{\alpha} is the least-squares fit of \eqn{\hat m + w(M - \hat m)} on
 \eqn{Z}, and \eqn{(\beta_Z, \beta_M)} solves, over all subjects, the
 logistic score equation in which predicted scores are corrected by
@@ -143,13 +143,13 @@ the same weights (Firth-penalized weighted logistic regression) and
 
 With \eqn{S} the \code{surrogate} columns, \code{outcome_surrogate} and any
 extra \code{ps_vars}, and \eqn{R_M}, \eqn{R_Y} the indicators that the mediator
-and the outcome are observed, the logistic attendance models are, by
+and the outcome are observed, the logistic missingness models are, by
 \code{missing_order}:
 \describe{
   \item{\code{"YM"}}{(default when the outcome is complete, or when some
     subjects have the outcome but not the mediator)
     \eqn{P(R_Y = 1 \mid S, Z)} and \eqn{P(R_M = 1 \mid S, Z, R_Y, R_Y Y)}, so
-    attendance for the mediator may depend on the recorded outcome. With a
+    whether the mediator is observed may depend on the recorded outcome. With a
     complete outcome this is \eqn{P(R_M = 1 \mid S, Z, Y)}.}
   \item{\code{"MY"}}{(monotone; default when every subject with the outcome
     also has the mediator) \eqn{P(R_M = 1 \mid S, Z)} and
@@ -157,13 +157,13 @@ and the outcome are observed, the logistic attendance models are, by
     mediator are treated as missing the outcome.}
 }
 The influence functions include the working-model fits and the estimation of
-the attendance models, and are stacked with those of \eqn{\alpha} as for a
+the missingness models, and are stacked with those of \eqn{\alpha} as for a
 continuous outcome. Simulations show reliable inference from about 50 events
 among subjects with mediator and outcome. The fit stores
 \code{binary_diagnostics}: \code{events_MY} (events among subjects with
 mediator and outcome), \code{events_Y} (among all with the outcome),
 \code{max_weight}, \code{ess} (effective sample size of the weights),
-\code{min_pi_M}, \code{min_pi_Y} (smallest fitted attendance probabilities
+\code{min_pi_M}, \code{min_pi_Y} (smallest fitted probabilities of being observed
 among the observed), \code{converged}, \code{eq_norm}, and
 \code{max_if_share_beta}, the largest single-subject share of the estimated
 variance of \eqn{\hat\beta_M}, with the row name of that subject
@@ -199,7 +199,7 @@ for the NIE), \code{conf_level}, \code{vcov}, \code{cor_ab},
 \code{n_obs_both}, \code{outcome_family} and, for a binary outcome,
 \code{events} (events among subjects with mediator and outcome),
 \code{effects_or}, \code{binary_diagnostics} and \code{missing_data} (the
-ordering used and a description of the attendance models).}
+ordering used and a description of the missingness models).}
 \examples{
 dat <- sim_mma_data(n = 2000, miss_rate = 0.5, rho = 0.8)
 fit <- mma(dat, exposure = "A", mediator = "M", outcome = "Y",

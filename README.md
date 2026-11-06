@@ -110,15 +110,15 @@ For a 0/1 outcome (e.g. COPD), set `outcome_family = "binomial"`. The outcome mo
 so `beta`, `NIE`, `NDE` and `TE` are on the log odds ratio scale and `fit$effects_or` gives odds
 ratios. Both paths target the full-cohort projections (the complete-case targets under MCAR) and
 are estimated by a sequential augmented inverse probability weighted (AIPW) estimator
-(`outcome_method = "SeqSynSurr"`, default). Its validity depends only on the logistic attendance
-(missingness) models; the surrogates and the working prediction models only affect precision.
+(`outcome_method = "SeqSynSurr"`, default). Its validity depends only on the logistic missingness
+models; the surrogates and the working prediction models only affect precision.
 `outcome_method = "IPW"` gives the weighted complete-case fit with the same weights and `"CC"` the
 complete-case fit.
 
 The missing-data ordering (`missing_order`) is chosen automatically and stated by `print()`:
-with a complete outcome, attendance for the mediator is modelled on (surrogates, exposure,
+with a complete outcome, the probability that the mediator is observed is modelled on (surrogates, exposure,
 covariates, outcome); with a monotone pattern (outcome recorded only with the mediator) the order
-is M -> Y; otherwise Y -> M, where attendance for the mediator may depend on the recorded outcome.
+is M -> Y; otherwise Y -> M, where whether the mediator is observed may depend on the recorded outcome.
 `fit$binary_diagnostics` reports events, the largest weight, the effective sample size, the
 smallest propensities and the largest single-subject share of Var(beta). With fewer than about 50
 events among subjects with mediator and outcome, or when one subject carries more than 20% of

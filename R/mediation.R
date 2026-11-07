@@ -185,6 +185,21 @@
 #' @param weighting for a continuous outcome with \code{"SeqSynSurr"}:
 #'   \code{"none"} (default, the closed form) or \code{"ipw"} (weighted
 #'   SynMediation, see Details; \code{ps_trim} bounds each fitted probability).
+#' @param alpha_method mediator path of the AIPW fits (binary outcome with
+#'   \code{"SeqSynSurr"}, or a continuous outcome with \code{missing_order = "YM"}):
+#'   \code{"closed"} (default) estimates \eqn{\alpha} by closed-form SynSurr
+#'   with the surrogate columns plus the outcome (the outcome itself when it is
+#'   complete, its observation indicator and observed values otherwise; for a
+#'   continuous outcome partly missing, also their interactions with the
+#'   observation indicator), which
+#'   is efficient but requires \eqn{E(M \mid S, Z)} to be linear;
+#'   \code{"aipw"} uses the augmented inverse-probability-weighted
+#'   pseudo-outcome regression, valid whatever the prediction model but less
+#'   precise when the weights are large (sensitivity analysis).
+#'   For a continuous outcome, \code{missing_order = "YM"} selects the
+#'   sequential AIPW estimator for a general missing pattern (participants with
+#'   the outcome but no mediator are used); the default closed form treats them
+#'   as missing the outcome.
 #' @return An object of class \code{"mma"}. Besides the estimates, the tests of
 #'   \eqn{H_0: NIE = 0} include the p-value matching the Monte Carlo interval,
 #'   \eqn{2\min\{P(\alpha^*\beta^* < 0), P(\alpha^*\beta^* > 0)\}} under the
@@ -220,13 +235,14 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
                 keep_IF = TRUE, verbose = TRUE, basis = c("linear", "poly2", "ns3"),
                 basis_outcome = FALSE, outcome_family = c("gaussian", "binomial"),
                 missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15,
-                weighting = c("none", "ipw")) {
+                weighting = c("none", "ipw"), alpha_method = c("closed", "aipw")) {
   mediator_method <- match.arg(mediator_method)
   outcome_method <- match.arg(outcome_method)
   basis <- match.arg(basis)
   outcome_family <- match.arg(outcome_family)
   missing_order <- match.arg(missing_order)
   weighting <- match.arg(weighting)
+  alpha_method <- match.arg(alpha_method)
   binom <- outcome_family == "binomial"
   ipw <- weighting == "ipw"
   if (ipw && (binom || outcome_method != "SeqSynSurr"))
@@ -235,6 +251,9 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     stop("weighted SynMediation uses the ordering M -> Y (missing_order = \"auto\" or \"MY\")")
   data <- as.data.frame(data)
   y_missing <- anyNA(data[[outcome]])
+  # Continuous outcome with the ordering Y -> M: sequential AIPW with an identity link (general
+  # missing pattern: participants with the outcome but no mediator are used).
+  ym_gauss <- !binom && outcome_method == "SeqSynSurr" && missing_order == "YM" && !ipw
   if (basis != "linear" && outcome_method != "SeqSynSurr")
     stop("basis is only used by outcome_method = \"SeqSynSurr\"")
   if (basis_outcome && basis == "linear") stop("basis_outcome = TRUE needs basis = \"poly2\" or \"ns3\"")
@@ -264,6 +283,12 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
       c(exposure, covariates, surrogate, outcome_surrogate) else
       c(outcome, exposure, covariates, surrogate)
     if (y_missing && outcome %in% ps_vars) stop("ps_vars cannot contain a missing outcome")
+    if (ym_gauss) {
+      if (basis != "linear") stop("missing_order = \"YM\" with a continuous outcome uses a linear basis")
+      if (mediator %in% ps_vars) stop("ps_vars cannot contain the mediator")
+      ps_vars <- setdiff(ps_vars, c(exposure, covariates, surrogate, outcome_surrogate, outcome))
+      if (!length(ps_vars)) ps_vars <- NULL
+    }
     if (ipw) {
       if (mediator %in% ps_vars) stop("ps_vars cannot contain the mediator")
       # As for a binary outcome: extra predictors of missingness are used like
@@ -284,11 +309,33 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
   S_Y <- if (is.null(outcome_surrogate)) NULL else data[[outcome_surrogate]]
   if (length(surrogate) > 1 && !outcome_method %in% c("SeqSynSurr", if (binom) "IPW"))
     stop("several surrogate columns are only supported by outcome_method = \"SeqSynSurr\"")
-  k_S <- length(surrogate) + !is.null(S_Y) + length(if (binom || ipw) ps_vars)
+  k_S <- length(surrogate) + !is.null(S_Y) + length(if (binom || ipw || ym_gauss) ps_vars)
   .check_sizes(M, Y, ncol(Z), k_S * switch(basis, linear = 1, poly2 = 2, ns3 = 3), outcome_method)
   if (binom)
     .check_events(M, Y, ncol(Z) + if (outcome_method != "CC") k_S else 0, firth)
 
+
+  # Mediator path for the AIPW fits: closed-form SynSurr (default; efficient, needs a linear
+  # E(M | S, Z)) or the AIPW pseudo-outcome regression (alpha_method = "aipw"; valid whatever the
+  # prediction model, at the cost of the weights). S carries the outcome information.
+  .alpha_swap <- function(out, S, Y, M, Z) {
+    if (alpha_method == "aipw") return(out$mediator)
+    RY <- !is.na(Y)
+    Sa <- if (all(RY)) cbind(S, .outcome = Y) else cbind(S, .R_Y = as.numeric(RY), .R_Y_Y = ifelse(RY, Y, 0))
+    if (!all(RY) && !binom) {
+      # Continuous outcome partly missing: E(M | S, Z, Y) among subjects with the outcome and
+      # E(M | S, Z) among those without it have different coefficients, and P(M observed) usually
+      # depends on R_Y, so additive R_Y terms are not enough (simulation: up to -27% bias in alpha).
+      # Interact the working model with R_Y when both groups have enough subjects with the mediator.
+      # (For a binary outcome the additive terms gave |bias| <= 0.16 SD and are kept for efficiency.)
+      Xi <- cbind(S, Z[, -1, drop = FALSE]) * as.numeric(RY)
+      colnames(Xi) <- paste0(".R_Y:", colnames(cbind(S, Z[, -1, drop = FALSE])))
+      RM <- !is.na(M)
+      if (min(sum(RM & RY), sum(RM & !RY)) > 2 * (ncol(Sa) + ncol(Xi) + ncol(Z))) Sa <- cbind(Sa, Xi)
+    }
+    Sa <- Sa[, apply(Sa, 2, function(v) stats::var(v) > 0), drop = FALSE]
+    .fit_alpha_closed(M, Sa, Z)
+  }
   if (binom) {
     Zt <- cbind(Z, ifelse(is.na(M), 0, M))
     colnames(Zt) <- c(colnames(Z), mediator)
@@ -301,7 +348,7 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
                          method = if (outcome_method == "IPW") "IPW" else "AIPW",
                          missing_order = missing_order, firth = firth, ps_trim = ps_trim,
                          Q = gh_nodes, row_ids = rownames(data))
-      med <- out$mediator
+      med <- if (outcome_method == "SeqSynSurr") .alpha_swap(out, S, Y, M, Z) else out$mediator
       dg <- out$diagnostics
       if (dg$events_MY < 50)
         warning(sprintf("%d events among subjects with mediator and outcome: inference is unreliable below about 50 events; treat as exploratory",
@@ -310,6 +357,14 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
         warning(sprintf("one subject (row %s) carries %.0f%% of the estimated variance of beta; check ps_trim and a fit without this subject",
                         dg$most_influential, 100 * dg$max_if_share_beta), call. = FALSE)
     }
+  } else if (ym_gauss) {
+    S <- cbind(as.matrix(data[, c(surrogate, outcome_surrogate, ps_vars), drop = FALSE]))
+    out <- .fit_binary(Y, M, S, Z, mediator, method = "AIPW", missing_order = "YM", ps_trim = ps_trim,
+                       Q = gh_nodes, row_ids = rownames(data), family = "gaussian")
+    med <- .alpha_swap(out, S, Y, M, Z)
+    if (out$diagnostics$max_if_share_beta > 0.2)
+      warning(sprintf("one subject (row %s) carries %.0f%% of the estimated variance of beta; check ps_trim and a fit without this subject",
+                      out$diagnostics$most_influential, 100 * out$diagnostics$max_if_share_beta), call. = FALSE)
   } else if (outcome_method == "SeqSynSurr") {
     # Both paths from one factorized fit that uses both surrogates.
     Zt <- cbind(Z, ifelse(is.na(M), 0, M))
@@ -397,7 +452,7 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     outcome_family = outcome_family,
     events = if (outcome_family == "binomial") sum(Y[!is.na(M)] == 1, na.rm = TRUE) else NULL,
     effects_or = if (outcome_family == "binomial") .or_table(effects, nie_ci) else NULL,
-    binary_diagnostics = if (binom) out$diagnostics,
+    binary_diagnostics = if (binom || ym_gauss) out$diagnostics,
     weight_diagnostics = if (ipw) out$diagnostics,
     weighting = if (outcome_method == "SeqSynSurr" && !binom) weighting,
     missing_data = if (!is.null(out$missing_order))

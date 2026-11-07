@@ -207,8 +207,12 @@
 
 # Ordering Y -> M (general; "P2" when the outcome is complete).
 .fit_binary_ym <- function(Y, M, S, Z, method = c("AIPW", "IPW"), firth = TRUE, ps_trim = NULL,
-                           Q = 15, clip_m = TRUE) {
-  method <- match.arg(method)
+                           Q = 15, clip_m = TRUE, family = c("binomial", "gaussian"), Qy = 5) {
+  method <- match.arg(method); family <- match.arg(family)
+  gauss <- family == "gaussian"
+  # Link: logistic (binary outcome) or identity (continuous outcome, least-squares projection).
+  linkinv <- if (gauss) function(e) e else plogis
+  dmu <- if (gauss) function(mu) 1 + 0 * mu else function(mu) mu * (1 - mu)
   n <- nrow(Z); p <- ncol(Z)
   RY <- !is.na(Y); RM <- !is.na(M)
   Ycomp <- all(RY); Mcomp <- all(RM)
@@ -223,8 +227,9 @@
   if (!is.null(ps_trim)) { piY <- pmax(piY, ps_trim); piM <- pmax(piM, ps_trim) }
   wY <- RY / piY; wM <- RM / piM; wYM <- RY * RM / (piY * piM)
 
-  fipw <- .logit_if(x, Yz, wYM, firth = firth, maxit = 500, tol = 1e-9)
-  diag <- list(n_M = sum(RM), n_Y = sum(RY), n_MY = sum(RY & RM), events_MY = sum(Yz[RY & RM]),
+  fipw <- if (gauss) .wls_if(x, Yz, w = wYM) else .logit_if(x, Yz, wYM, firth = firth, maxit = 500, tol = 1e-9)
+  diag <- list(n_M = sum(RM), n_Y = sum(RY), n_MY = sum(RY & RM),
+               events_MY = if (gauss) NA_real_ else sum(Yz[RY & RM]),
                max_weight = max(wYM), ess = sum(wYM)^2 / sum(wYM^2),
                min_pi_M = if (!Mcomp) min(piM[RM]) else NA_real_,
                min_pi_Y = if (!Ycomp) min(piY[RY]) else NA_real_,
@@ -239,8 +244,13 @@
   gh <- .gh_rule(Q); one <- rep(1, n)
   if (!Ycomp) {
     VY <- cbind(Z, S, if (Mcomp) cbind(M = Mz))
-    fp <- .logit_if(VY, Yz, wY, firth = FALSE, maxit = 500, tol = 1e-9)
-    pY_fun <- function(b) plogis(drop(VY %*% b))
+    if (gauss) {
+      # weighted least squares of Y on (S, Z) and weighted residual variance
+      fp <- .wls_if(VY, Yz, w = wY)
+      s2Y <- sum(wY * fp$resid^2) / sum(wY)
+      ghy <- .gh_rule(Qy)
+    } else fp <- .logit_if(VY, Yz, wY, firth = FALSE, maxit = 500, tol = 1e-9)
+    pY_fun <- function(b) linkinv(drop(VY %*% b))
   }
   if (!Mcomp) {
     fm <- .wls_if(VM, Mz, w = as.numeric(RM))
@@ -257,37 +267,52 @@
       L1 <- list(M = clipm(drop(V1y %*% xi$m)) + sd * zq, Y = matrix(Yz, n, Q), W = wq)
       if (Ycomp) return(list(L1 = L1, L0 = L1))
       pr <- pY_fun(xi$p)
-      L0 <- list(M = cbind(clipm(drop(V11 %*% xi$m)) + sd * zq, clipm(drop(V10 %*% xi$m)) + sd * zq),
-                 Y = cbind(matrix(1, n, Q), matrix(0, n, Q)), W = cbind(pr * wq, (1 - pr) * wq))
+      if (gauss) {
+        # Y | S, Z ~ N(yhat, s2Y) (Qy nodes); for each Y node, M | S, Z, Y ~ N(m(S, Z, 1, Y), s2) (Q nodes)
+        m0 <- drop(V10 %*% xi$m); bY <- xi$m[["RY_Y"]]; sy <- sqrt(xi$s2Y)
+        Ml <- Yl <- Wl <- vector("list", Qy)
+        for (j in seq_len(Qy)) {
+          yj <- pr + sy * ghy$z[j]
+          Ml[[j]] <- clipm(m0 + bY * yj) + sd * zq
+          Yl[[j]] <- matrix(yj, n, Q); Wl[[j]] <- ghy$w[j] * wq
+        }
+        L0 <- list(M = do.call(cbind, Ml), Y = do.call(cbind, Yl), W = do.call(cbind, Wl))
+      } else
+        L0 <- list(M = cbind(clipm(drop(V11 %*% xi$m)) + sd * zq, clipm(drop(V10 %*% xi$m)) + sd * zq),
+                   Y = cbind(matrix(1, n, Q), matrix(0, n, Q)), W = cbind(pr * wq, (1 - pr) * wq))
     } else {
       pr <- pY_fun(xi$p)
       L1 <- list(M = cbind(Mz), Y = cbind(Yz), W = cbind(one))
-      L0 <- list(M = cbind(Mz, Mz), Y = cbind(one, 0 * one), W = cbind(pr, 1 - pr))
+      L0 <- if (gauss) {
+        sy <- sqrt(xi$s2Y)
+        list(M = matrix(Mz, n, Qy), Y = outer(pr, rep(1, Qy)) + sy * outer(one, ghy$z), W = outer(one, ghy$w))
+      } else list(M = cbind(Mz, Mz), Y = cbind(one, 0 * one), W = cbind(pr, 1 - pr))
     }
     list(L1 = L1, L0 = L0)
   }
   hfun <- function(L, th) {
-    Rq <- L$Y - plogis(drop(Z %*% th[1:p]) + th[p + 1] * L$M)
+    Rq <- L$Y - linkinv(drop(Z %*% th[1:p]) + th[p + 1] * L$M)
     cbind(Z * rowSums(L$W * Rq), M = rowSums(L$W * L$M * Rq))
   }
   hjac <- function(L, th, cc) {            # sum_i cc_i * (- d h_i / d theta)
-    mu <- plogis(drop(Z %*% th[1:p]) + th[p + 1] * L$M); V <- L$W * mu * (1 - mu)
+    mu <- linkinv(drop(Z %*% th[1:p]) + th[p + 1] * L$M); V <- L$W * dmu(mu)
     a <- rowSums(V); b <- rowSums(V * L$M); c2 <- rowSums(V * L$M^2)
     zb <- crossprod(Z, cc * b)
     rbind(cbind(crossprod(Z * (cc * a), Z), zb), c(zb, sum(cc * c2)))
   }
-  xi0 <- list(m = if (!Mcomp) fm$coef, s2 = if (!Mcomp) s2, p = if (!Ycomp) fp$coef)
+  xi0 <- list(m = if (!Mcomp) fm$coef, s2 = if (!Mcomp) s2, p = if (!Ycomp) fp$coef,
+              s2Y = if (gauss && !Ycomp) s2Y)
   c0 <- 1 - wY; c1 <- wY - wYM; c2 <- wYM
   psi_fun <- function(th, nd) {
-    mu <- plogis(drop(x %*% th))
+    mu <- linkinv(drop(x %*% th))
     c0 * hfun(nd$L0, th) + c1 * hfun(nd$L1, th) + c2 * x * (Yz - mu)
   }
 
   ## beta: Newton from the weighted complete-case (Firth) fit
   nd <- nodes(xi0); th <- fipw$coef; conv <- FALSE
   for (it in 1:100) {
-    mu <- plogis(drop(x %*% th))
-    H <- hjac(nd$L0, th, c0) + hjac(nd$L1, th, c1) + crossprod(x * (c2 * mu * (1 - mu)), x)
+    mu <- linkinv(drop(x %*% th))
+    H <- hjac(nd$L0, th, c0) + hjac(nd$L1, th, c1) + crossprod(x * (c2 * dmu(mu)), x)
     step <- drop(solve(H, colSums(psi_fun(th, nd))))
     mx <- max(abs(step)); if (mx > 2) step <- step * 2 / mx
     th <- th + step
@@ -295,8 +320,8 @@
   }
   if (!conv) warning("AIPW estimating equation did not converge (max step ", signif(mx, 3), ")",
                      call. = FALSE)
-  mu <- plogis(drop(x %*% th))
-  H <- hjac(nd$L0, th, c0) + hjac(nd$L1, th, c1) + crossprod(x * (c2 * mu * (1 - mu)), x)
+  mu <- linkinv(drop(x %*% th))
+  H <- hjac(nd$L0, th, c0) + hjac(nd$L1, th, c1) + crossprod(x * (c2 * dmu(mu)), x)
   psi_b <- psi_fun(th, nd)
   diag$converged <- conv
   diag$eq_norm <- sqrt(sum(colSums(psi_b)^2)) / n
@@ -311,10 +336,11 @@
   pack <- function(v) {
     i <- 0; take <- function(k) { r <- v[i + seq_len(k)]; i <<- i + k; r }
     list(m = if (!Mcomp) take(length(fm$coef)), s2 = if (!Mcomp) take(1),
-         p = if (!Ycomp) take(length(fp$coef)))
+         p = if (!Ycomp) take(length(fp$coef)), s2Y = if (gauss && !Ycomp) take(1))
   }
-  xv <- c(xi0$m, xi0$s2, xi0$p)
-  IF_xi <- cbind(if (!Mcomp) cbind(fm$IF, RM * (fm$resid^2 - s2) * n / sum(RM)), if (!Ycomp) fp$IF)
+  xv <- c(xi0$m, xi0$s2, xi0$p, xi0$s2Y)
+  IF_xi <- cbind(if (!Mcomp) cbind(fm$IF, RM * (fm$resid^2 - s2) * n / sum(RM)), if (!Ycomp) fp$IF,
+                 if (gauss && !Ycomp) wY * (fp$resid^2 - s2Y) * n / sum(wY))
   Dxi <- .numjac(function(v) colMeans(psi_fun(th, nodes(pack(v)))), xv, eps = 1e-5)
   IF_b <- (psi_b + IF_xi %*% t(Dxi)) %*% t(solve(H / n))
   if (!Mcomp) {
@@ -329,8 +355,9 @@
 # engine and returns both paths in the format of the other outcome fits.
 .fit_binary <- function(Y, M, S, Z, mediator_name, method = c("AIPW", "IPW"),
                         missing_order = c("auto", "YM", "MY"), firth = TRUE, ps_trim = NULL,
-                        Q = 15, row_ids = NULL) {
-  method <- match.arg(method); missing_order <- match.arg(missing_order)
+                        Q = 15, row_ids = NULL, family = c("binomial", "gaussian")) {
+  method <- match.arg(method); missing_order <- match.arg(missing_order); family <- match.arg(family)
+  gauss <- family == "gaussian"
   S <- as.matrix(S)
   n <- nrow(Z); p <- ncol(Z)
   RM <- !is.na(M); RY <- !is.na(Y)
@@ -339,7 +366,7 @@
     if (all(RY) || any(RY & !RM)) "YM" else "MY"
   if (order == "none") {
     fa <- .wls_if(Z, M)
-    fb <- .logit_if(cbind(Z, M = M), Y, firth = method == "IPW" && firth)
+    fb <- if (gauss) .wls_if(cbind(Z, M = M), Y) else .logit_if(cbind(Z, M = M), Y, firth = method == "IPW" && firth)
     res <- list(alpha = fa$coef, IF_a = fa$IF, theta = fb$coef, IF_b = fb$IF,
                 diag = list(n_M = n, n_Y = n, n_MY = n, events_MY = sum(Y), max_weight = 1,
                             ess = n, min_pi_M = NA_real_, min_pi_Y = NA_real_,
@@ -347,12 +374,13 @@
                 aliased = fb$aliased)
     assumption <- "no missing mediator or outcome: full-data least squares and logistic regression"
   } else if (order == "YM") {
-    res <- .fit_binary_ym(Y, M, S, Z, method, firth, ps_trim, Q)
+    res <- .fit_binary_ym(Y, M, S, Z, method, firth, ps_trim, Q, family = family)
     assumption <- if (all(RY))
       sprintf("outcome complete; P(mediator observed) logistic in (%s, exposure, covariates, outcome)", sv) else
       if (all(RM)) sprintf("mediator complete; P(outcome observed) logistic in (%s, exposure, covariates)", sv) else
       sprintf("sequential MAR, order Y -> M: P(outcome observed) logistic in (%s, exposure, covariates); P(mediator observed) logistic in (%s, exposure, covariates, R_Y, R_Y * outcome)", sv, sv)
   } else {
+    if (gauss) stop("internal: the continuous-outcome AIPW engine uses the ordering Y -> M")
     res <- .fit_binary_my(Y, M, S, Z, method, firth, ps_trim, Q)
     assumption <- sprintf("sequential MAR, order M -> Y: P(mediator observed) logistic in (%s, exposure, covariates)%s",
                           sv, if (any(RM & !RY))
@@ -371,7 +399,7 @@
   d$most_influential <- if (is.null(row_ids)) which.max(ib^2) else row_ids[which.max(ib^2)]
   label <- if (order == "none") "full data" else
     sprintf("%s (%s)", if (method == "AIPW") "sequential AIPW" else "IPW", gsub("(.)(.)", "\\1 -> \\2", order))
-  if (method == "IPW" && firth && order != "none") label <- sub(")", ", Firth)", label, fixed = TRUE)
+  if (method == "IPW" && firth && order != "none" && !gauss) label <- sub(")", ", Firth)", label, fixed = TRUE)
   list(coef = theta, vcov = .vcov_if(IF_b), IF = IF_b, method = label,
        mediator = list(coef = alpha, IF = IF_a, vcov = .vcov_if(IF_a), method = label),
        diagnostics = d, missing_order = order, assumption = assumption,

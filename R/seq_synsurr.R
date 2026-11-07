@@ -266,3 +266,27 @@
   fit$weights <- list(w1 = w1, w2 = w2)
   fit
 }
+
+
+# Closed-form SynSurr estimate of the exposure--mediator path alone (steps (i)--(ii) of
+# SynMediation): alpha = gamma + kappa delta, with its influence function (exact product
+# rule). Used for the mediator path of the AIPW fits (binary outcomes; continuous outcomes
+# with the ordering Y -> M), where S also carries the outcome information (Y itself when it is
+# complete, R_Y and R_Y * Y otherwise).
+.fit_alpha_closed <- function(M, S, Z) {
+  S <- as.matrix(S); k <- ncol(S)
+  if (is.null(colnames(S)) || any(colnames(S) == "")) colnames(S) <- paste0("S", seq_len(k))
+  R1 <- as.numeric(!is.na(M)); Mz <- ifelse(R1 == 1, M, 0)
+  f1 <- lapply(seq_len(k), function(j) .wls_if(Z, S[, j]))
+  kappa <- sapply(f1, `[[`, "coef")
+  f2 <- .wls_if(cbind(S, Z), Mz, w = R1)
+  bad <- intersect(c(unlist(lapply(f1, `[[`, "aliased")), f2$aliased), c(colnames(S), colnames(Z)[2]))
+  if (length(bad)) stop("not identified (collinear within the observed subset): ", paste(bad, collapse = ", "))
+  delta <- f2$coef[seq_len(k)]; gamma <- f2$coef[-seq_len(k)]
+  alpha <- setNames(gamma + drop(kappa %*% delta), colnames(Z))
+  IF <- f2$IF[, -seq_len(k), drop = FALSE] + f2$IF[, seq_len(k), drop = FALSE] %*% t(kappa)
+  for (j in seq_len(k)) IF <- IF + f1[[j]]$IF * delta[j]
+  colnames(IF) <- colnames(Z)
+  list(coef = alpha, IF = IF, vcov = .vcov_if(IF), method = "SynSurr (closed form)",
+       partial_r2 = 1 - sum(R1 * f2$resid^2) / sum(R1 * .wls_if(Z, Mz, w = R1)$resid^2))
+}

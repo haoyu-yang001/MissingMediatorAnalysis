@@ -31,7 +31,8 @@ mma(data, exposure, mediator, outcome, surrogate, covariates = NULL,
     basis = c("linear", "poly2", "ns3"), basis_outcome = FALSE,
     outcome_family = c("gaussian", "binomial"),
     missing_order = c("auto", "YM", "MY"), firth = TRUE, gh_nodes = 15,
-    weighting = c("none", "ipw"))
+    weighting = c("none", "ipw"),
+    alpha_method = c("closed", "aipw"))
 }
 \arguments{
 \item{data}{a data frame.}
@@ -99,6 +100,10 @@ estimator target-preserving under missingness at random whatever the relation
 between the surrogates and the mediator and outcome (see Details). Not
 available for a binary outcome (whose estimator is already weighted) or other
 \code{outcome_method}s.}
+
+\item{alpha_method}{mediator path of the AIPW fits (binary outcome with \code{"SeqSynSurr"}, or a continuous outcome with \code{missing_order = "YM"}): \code{"closed"} (default) estimates \eqn{\alpha} by closed-form SynSurr with the surrogate columns plus the outcome (the outcome itself when it is complete, its observation indicator and observed values otherwise; for a
+continuous outcome partly missing, also their interactions with the
+observation indicator), which is efficient but requires \eqn{E(M \mid S, Z)} to be linear; \code{"aipw"} uses the augmented inverse-probability-weighted pseudo-outcome regression, valid whatever the prediction model but less precise when the weights are large (sensitivity analysis). For a continuous outcome, \code{missing_order = "YM"} selects the sequential AIPW estimator for a general missing pattern (participants with the outcome but no mediator are used); the default closed form treats them as missing the outcome.}
 \item{missing_order}{for a binary outcome with \code{"SeqSynSurr"} or
 \code{"IPW"}: \code{"auto"} (default), \code{"YM"} or \code{"MY"}, the
 ordering of the sequential missing-at-random assumption (see Details).

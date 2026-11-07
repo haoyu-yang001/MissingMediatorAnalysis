@@ -1,7 +1,7 @@
 Package: MissingMediatorAnalysis
 Type: Package
 Title: Mediation Analysis with a Partially Missing Mediator and Outcome
-Version: 0.3.1
+Version: 0.4.0
 Authors@R: person("Haoyu", "Yang", email = "haoyuyang@hsph.harvard.edu", role = c("aut", "cre"))
 Description: Product-of-coefficients mediation analysis when the mediator,
     and optionally the outcome, are partially missing at random given fully

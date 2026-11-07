@@ -138,8 +138,13 @@ For a 0/1 outcome (e.g. COPD), set `outcome_family = "binomial"`. The outcome mo
 so `beta`, `NIE`, `NDE` and `TE` are on the log odds ratio scale and `fit$effects_or` gives odds
 ratios. Both paths target the full-cohort projections (the complete-case targets under MCAR) and
 are estimated by a sequential augmented inverse probability weighted (AIPW) estimator
-(`outcome_method = "SeqSynSurr"`, default). Its validity depends only on the logistic missingness
-models; the surrogates and the working prediction models only affect precision.
+(`outcome_method = "SeqSynSurr"`, default). The validity of `beta` depends only on the logistic
+missingness models; the surrogates and the working prediction models only affect precision.
+`alpha` is estimated by closed-form SynSurr with the surrogate columns plus the outcome
+(`alpha_method = "closed"`, default). This is more precise, and the prediction model that generated
+the surrogate need not be correct, but it assumes that the mean of the mediator given the surrogates,
+covariates and outcome is linear. `alpha_method = "aipw"` drops this assumption at the cost of
+precision (sensitivity analysis).
 `outcome_method = "IPW"` gives the weighted complete-case fit with the same weights and `"CC"` the
 complete-case fit.
 
@@ -158,6 +163,19 @@ fit <- mma(data, exposure = "protein", mediator = "MFI", outcome = "COPD",
            outcome_surrogate = "S_COPD", outcome_family = "binomial", mc_draws = 1e4)
 fit$effects_or
 fit$binary_diagnostics
+```
+
+### Continuous outcome in a general missing pattern
+
+When a continuous outcome is also recorded for subjects without the mediator, `missing_order = "YM"`
+uses the sequential AIPW estimator with an identity link, so these subjects contribute. The
+closed-form `alpha` then interacts the surrogates and covariates with whether the outcome was recorded.
+The default closed form instead treats them as missing the outcome.
+
+```r
+fit <- mma(data, exposure = "protein", mediator = "MFI", outcome = "FVC",
+           surrogate = c("S_MFI", "attendance_score"), covariates = covs,
+           outcome_surrogate = "S_FVC", missing_order = "YM")
 ```
 
 `mma_scan()` passes `outcome_family` and the other arguments to `mma()`; its output includes

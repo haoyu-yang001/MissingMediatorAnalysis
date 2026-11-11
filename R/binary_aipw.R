@@ -4,8 +4,10 @@
 #   alpha: least squares of M on Z = (1, A, X);
 #   theta = (beta_Z, beta_M): logistic projection of Y on x = (Z, M), the solution of
 #          E[x {Y - expit(x'theta)}] = 0;  NIE = alpha_A beta_M (log odds ratio scale).
-# Validity rests only on the missingness models; the surrogates and the
-# working prediction models (for M and for Y) affect precision, never the target.
+# Validity of these AIPW estimators rests only on the missingness models; the surrogates and
+# the working prediction models (for M and for Y) affect precision, never the target. (mma()
+# by default replaces the AIPW alpha by closed-form SynSurr, alpha_method = "closed", which
+# assumes a linear E(M | Z, S, Y).)
 #
 # Two orderings of sequential missingness at random (S = surrogates and auxiliaries):
 #   "YM" (.fit_binary_ym): R_Y depends on (S, Z); R_M on (S, Z, R_Y, R_Y * Y). With a

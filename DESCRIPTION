@@ -15,14 +15,21 @@ Description: Product-of-coefficients mediation analysis when the mediator,
     weights it reduces to SynMediation. Alternatives for the mediator-outcome
     path include the efficient augmented inverse probability weighted (AIPW)
     estimator of Qin, Zhang and Leung (2017) and its combination with
-    complete-case regression. Inference on the indirect effect uses the
-    stacked influence functions of both paths, so the cross-path covariance
-    is accounted for. Binary outcomes (logistic outcome model) are handled by
-    a target-preserving sequential augmented inverse probability weighted
-    estimator: it estimates the full-cohort (complete-case) projections, and
-    its validity depends only on the models for missingness, not on the
-    surrogate or prediction models; weighted complete-case (IPW) and
-    complete-case fits are also available.
+    complete-case regression. Inference on the indirect association (the
+    product of the two path coefficients) uses the stacked influence
+    functions of both paths, so the cross-path covariance is accounted for.
+    For binary outcomes (logistic outcome model) both paths target the
+    full-cohort (complete-case) projections. By default the
+    exposure-mediator path is estimated in closed form by synthetic
+    surrogate analysis with the outcome added to the surrogates, which
+    requires a linear working model for the mean of the mediator given the
+    exposure, covariates, surrogates and outcome; the mediator-outcome path
+    is estimated by a sequential augmented inverse probability weighted
+    estimator, which requires correct models for the probability of being
+    measured and positivity. The prediction models that generated the
+    surrogates need not be correct. An augmented inverse probability
+    weighted estimator of the exposure-mediator path, weighted
+    complete-case (IPW) and complete-case fits are also available.
 License: GPL (>= 3)
 Encoding: UTF-8
 Depends: R (>= 4.0.0)

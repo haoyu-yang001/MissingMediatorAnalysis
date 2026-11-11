@@ -16,6 +16,9 @@
 #'   (\code{max_weight_M}, \code{ess_M}), the smallest probability of
 #'   observing the mediator (\code{min_pi_M}) and the largest single-subject
 #'   shares of the variances of \eqn{\hat\alpha_A} and \eqn{\hat\beta_M}.
+#'   The column \code{nie} is the indirect association
+#'   \eqn{\hat\alpha_A\hat\beta_M}; \code{te}, \code{se_te}, \code{p_te} and
+#'   \code{pm} are \code{NA} for a binary outcome.
 #' @export
 as.data.frame.mma <- function(x, row.names = NULL, optional = FALSE, ...) {
   e <- x$effects

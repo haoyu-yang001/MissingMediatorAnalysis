@@ -2,7 +2,7 @@
 
 Mediation analysis with a partially missing mediator and outcome.
 
-`MissingMediatorAnalysis` estimates the exposure → mediator → outcome indirect effect (product of
+`MissingMediatorAnalysis` estimates the exposure → mediator → outcome indirect association (product of
 coefficients) when the mediator, and optionally the outcome, are missing at random given fully
 observed synthetic surrogates (predictions of the missing variables from data available for
 everyone). The proposed method, **SynMediation**, extends synthetic surrogate (SynSurr) analysis to
@@ -13,7 +13,7 @@ mediation and uses all subjects through three least-squares fits:
 3. outcome on mediator, surrogates, exposure and covariates (subjects with both).
 
 Inference uses the stacked influence functions of both paths, so the covariance between the two
-paths is accounted for; the indirect effect has delta-method and Monte Carlo confidence intervals.
+paths is accounted for; the indirect association has delta-method and Monte Carlo confidence intervals.
 The outcome can be continuous (linear model, default) or binary (`outcome_family = "binomial"`,
 logistic model; see below). The package depends only on base R.
 
@@ -61,9 +61,9 @@ missing surrogate inputs (e.g. by the median) before computing the surrogates.
 
 | Component | Content |
 |---|---|
-| `effects` | rows `alpha`, `beta`, `NIE`, `NDE`, `TE`, `PM`; columns `estimate`, `se`, `z`, `p`, `lower`, `upper` |
-| `nie_ci` | NIE confidence intervals: delta method and Monte Carlo (recommended) |
-| `tests` | tests of NIE = 0: Sobel, joint significance, Monte Carlo |
+| `effects` | rows `alpha`, `beta`, `NIE` (indirect association alpha × beta), `NDE` (direct association), `TE`, `PM` (`NA` for a binary outcome); columns `estimate`, `se`, `z`, `p`, `lower`, `upper` |
+| `nie_ci` | confidence intervals for the indirect association (alpha × beta): delta method and Monte Carlo (recommended) |
+| `tests` | tests of alpha × beta = 0: Sobel, joint significance, Monte Carlo |
 | `vcov`, `cor_ab` | joint covariance of the six effects; estimated corr(alpha, beta) |
 | `mediator_model`, `outcome_model` | all coefficients of the two models with SE, z, p and CI |
 | `n`, `n_obs`, `n_obs_Y`, `n_obs_both` | total; with mediator; with outcome; with both |
@@ -135,8 +135,9 @@ mma_diagnostics(fit, data)
 ### Binary outcome
 
 For a 0/1 outcome (e.g. COPD), set `outcome_family = "binomial"`. The outcome model is logistic,
-so `beta`, `NIE`, `NDE` and `TE` are on the log odds ratio scale and `fit$effects_or` gives odds
-ratios. Both paths target the full-cohort projections (the complete-case targets under MCAR) and
+so `beta`, `NIE` and `NDE` are on the log odds ratio scale and `fit$effects_or` gives odds
+ratios. `TE` and `PM` are `NA`: log odds ratios of the direct and indirect associations do not add
+up to a total association. Both paths target the full-cohort projections (the complete-case targets under MCAR) and
 are estimated by a sequential augmented inverse probability weighted (AIPW) estimator
 (`outcome_method = "SeqSynSurr"`, default). The validity of `beta` depends only on the logistic
 missingness models; the surrogates and the working prediction models only affect precision.

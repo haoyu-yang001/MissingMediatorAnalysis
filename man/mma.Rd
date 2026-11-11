@@ -15,11 +15,17 @@ SynMediation (\code{outcome_method = "SeqSynSurr"}), the maximum
 likelihood estimator of the factorized Gaussian model
 \eqn{f(S \mid Z) f(M \mid S, Z) f(Y \mid M, S, Z)}, with \eqn{S} the surrogate
 of \eqn{M} (and of \eqn{Y}, if given) and \eqn{Z = (1, A, X)}. The function
-reports \eqn{NIE = \alpha_A\beta_M}, \eqn{NDE = \beta_A}, \eqn{TE = NDE + NIE}
-and the proportion mediated. Standard errors use the stacked influence
+reports the indirect association \eqn{\alpha_A\beta_M} (row \code{NIE}; the
+name is kept for backward compatibility, but the product is an association, not
+a causal natural indirect effect), the direct association \eqn{\beta_A} (row
+\code{NDE}) and, for a continuous outcome, the total association
+\eqn{TE = NDE + NIE} and the proportion mediated \eqn{PM = NIE/TE}. For a
+binary outcome \code{TE} and \code{PM} are \code{NA}, because log odds ratios
+of the direct and indirect associations do not add up to a total association.
+Standard errors use the stacked influence
 functions of both paths, so they include \eqn{Cov(\hat\alpha_A, \hat\beta_M)}.
-Two tests of \eqn{H_0: NIE = 0} are given: the delta-method (Sobel-type) Wald
-test and the joint-significance test.
+Two tests of \eqn{H_0: \alpha_A\beta_M = 0} are given: the delta-method
+(Sobel-type) Wald test and the joint-significance test.
 }
 \usage{
 mma(data, exposure, mediator, outcome, surrogate, covariates = NULL,
@@ -67,7 +73,8 @@ weights (see Details).}
 outcome and for \code{weighting = "ipw"} it is applied to each missingness
 model separately (a sensitivity analysis for extreme weights; the influence
 functions ignore it).}
-\item{mc_draws}{number of Monte Carlo draws for the NIE confidence interval;
+\item{mc_draws}{number of Monte Carlo draws for the confidence interval of the
+indirect association \eqn{\alpha_A\beta_M};
 \code{0} skips it.}
 \item{na_action}{\code{"omit"} (default) drops, with a message, rows with
 missing values in the exposure, covariates, surrogates or \code{ps_vars};
@@ -103,7 +110,7 @@ available for a binary outcome (whose estimator is already weighted) or other
 
 \item{alpha_method}{mediator path of the AIPW fits (binary outcome with \code{"SeqSynSurr"}, or a continuous outcome with \code{missing_order = "YM"}): \code{"closed"} (default) estimates \eqn{\alpha} by closed-form SynSurr with the surrogate columns plus the outcome (the outcome itself when it is complete, its observation indicator and observed values otherwise; for a
 continuous outcome partly missing, also their interactions with the
-observation indicator), which is efficient but requires \eqn{E(M \mid S, Z)} to be linear; \code{"aipw"} uses the augmented inverse-probability-weighted pseudo-outcome regression, valid whatever the prediction model but less precise when the weights are large (sensitivity analysis). For a continuous outcome, \code{missing_order = "YM"} selects the sequential AIPW estimator for a general missing pattern (participants with the outcome but no mediator are used); the default closed form treats them as missing the outcome.}
+observation indicator), which is efficient but requires the working model \eqn{E(M \mid Z, S, Y)} to be linear (the prediction models of the surrogates need not be correct); \code{"aipw"} uses the augmented inverse-probability-weighted pseudo-outcome regression, valid whatever the prediction model but less precise when the weights are large (sensitivity analysis). For a continuous outcome, \code{missing_order = "YM"} selects the sequential AIPW estimator for a general missing pattern (participants with the outcome but no mediator are used); the default closed form treats them as missing the outcome.}
 \item{missing_order}{for a binary outcome with \code{"SeqSynSurr"} or
 \code{"IPW"}: \code{"auto"} (default), \code{"YM"} or \code{"MY"}, the
 ordering of the sequential missing-at-random assumption (see Details).
@@ -191,18 +198,25 @@ X^\top\beta_X}. Both paths are defined as full-cohort projections (least
 squares of \eqn{M} on \eqn{Z = (1, A, X)}; logistic projection of \eqn{Y} on
 \eqn{(Z, M)}), which are also the complete-case targets when data are missing
 completely at random, so \eqn{\beta_M} is a log odds ratio per unit of the
-mediator and \eqn{NIE = \alpha_A\beta_M} is on the log odds ratio scale. The
-default (\code{outcome_method = "SeqSynSurr"}) is a sequential augmented
-inverse probability weighted (AIPW) estimator. Its consistency rests only on
-the missingness models: the surrogates and the working
-prediction models for \eqn{M} (normal linear in the surrogates and \eqn{Z},
-clipped to the observed range of \eqn{M}) and for \eqn{Y} (logistic) affect
-precision, never the target. Both paths use the same missingness models:
-\eqn{\alpha} is the least-squares fit of \eqn{\hat m + w(M - \hat m)} on
-\eqn{Z}, and \eqn{(\beta_Z, \beta_M)} solves, over all subjects, the
-logistic score equation in which predicted scores are corrected by
-inverse-probability-weighted residuals of the subjects with the mediator and
-outcome. \code{outcome_method = "IPW"} is the weighted complete-case fit with
+mediator and the indirect association \eqn{\alpha_A\beta_M} (row
+\code{NIE}) and the direct association \eqn{\beta_A} (row \code{NDE}) are on
+the log odds ratio scale; \code{TE} and \code{PM} are \code{NA}. By default
+(\code{outcome_method = "SeqSynSurr"}), \eqn{(\beta_Z, \beta_M)} is estimated
+by a sequential augmented inverse probability weighted (AIPW) estimator: it
+solves, over all subjects, the logistic score equation in which predicted
+scores are corrected by inverse-probability-weighted residuals of the subjects
+with the mediator and outcome. Its consistency requires correct models for the
+probability of being measured (missingness models) and positivity; the
+surrogates and the working prediction models for \eqn{M} (normal linear in the
+surrogates and \eqn{Z}, clipped to the observed range of \eqn{M}) and for
+\eqn{Y} (logistic) affect precision, never the target. With the default
+\code{alpha_method = "closed"}, \eqn{\alpha} is estimated in closed form by
+SynSurr with the surrogate columns plus the outcome, which requires a linear
+working model \eqn{E(M \mid Z, S, Y)}; the prediction models that generated the
+surrogates need not be correct. \code{alpha_method = "aipw"} instead uses the
+same missingness models, with \eqn{\alpha} the least-squares fit of
+\eqn{\hat m + w(M - \hat m)} on \eqn{Z}; this drops the linearity assumption
+at the cost of precision (sensitivity analysis). \code{outcome_method = "IPW"} is the weighted complete-case fit with
 the same weights (Firth-penalized weighted logistic regression) and
 \code{"CC"} the unweighted complete-case fit.
 
@@ -237,10 +251,10 @@ fewer than 50 events or one subject carries more than 20\% of that variance;
 then report sensitivity analyses with \code{ps_trim} and without the most
 influential subject. The function stops when there are no events and warns when
 there are fewer than 5 per parameter. The output adds \code{effects_or}, the
-odds ratios of \eqn{\beta_M}, NIE, NDE and TE. With no missing data the fit
+odds ratios of \eqn{\beta_M}, NIE and NDE (TE is \code{NA}). With no missing data the fit
 reproduces \code{lm} and \code{glm(..., family = binomial)} exactly.
 
-The tests of \eqn{H_0: NIE = 0} are the delta-method (Sobel-type) Wald
+The tests of \eqn{H_0: \alpha_A\beta_M = 0} are the delta-method (Sobel-type) Wald
 test, the joint-significance test \eqn{\max(p_\alpha, p_\beta)} and the
 p-value matching the Monte Carlo interval,
 \eqn{2\min\{P(\alpha^*\beta^* < 0), P(\alpha^*\beta^* > 0)\}} under the
@@ -250,15 +264,18 @@ subjects with the mediator, or with both mediator and outcome, does not exceed
 the number of parameters, and warns when it is below 10 per parameter.
 
 Besides the delta-method (Wald) interval, a Monte Carlo confidence interval for
-the NIE is reported. It draws \eqn{(\alpha_A^*, \beta_M^*)} from the bivariate
+the indirect association \eqn{\alpha_A\beta_M} is reported. It draws \eqn{(\alpha_A^*, \beta_M^*)} from the bivariate
 normal approximation to \eqn{(\hat\alpha_A, \hat\beta_M)}, including their
 estimated covariance, and takes quantiles of \eqn{\alpha_A^*\beta_M^*}, so the
 interval reflects the skewness of a product of two estimates. It uses the random
 number generator; call \code{set.seed()} beforehand for reproducible limits.
 }
-\value{An object of class \code{"mma"} with components \code{effects},
+\value{An object of class \code{"mma"} with components \code{effects} (rows
+\code{alpha}, \code{beta}, \code{NIE} = indirect association
+\eqn{\alpha_A\beta_M}, \code{NDE} = direct association \eqn{\beta_A},
+\code{TE} and \code{PM}, the last two \code{NA} for a binary outcome),
 \code{tests}, \code{nie_ci} (delta-method and Monte Carlo confidence intervals
-for the NIE), \code{conf_level}, \code{vcov}, \code{cor_ab},
+for the indirect association), \code{conf_level}, \code{vcov}, \code{cor_ab},
 \code{mediator_model}, \code{outcome_model}, \code{fits}, \code{n},
 \code{n_obs} (observed mediator), \code{n_obs_Y} (observed outcome),
 \code{n_obs_both}, \code{outcome_family} and, for a binary outcome,

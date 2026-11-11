@@ -17,7 +17,9 @@ effective sample size of step 3 (\code{max_weight}, \code{ess}) and of step 2
 (\code{max_weight_M}, \code{ess_M}), the smallest fitted probability of
 observing the mediator (\code{min_pi_M}, also for a binary outcome), and the
 largest single-subject shares of the variances of \eqn{\hat\beta_M} and
-\eqn{\hat\alpha_A} (\code{max_if_share_alpha}).
+\eqn{\hat\alpha_A} (\code{max_if_share_alpha}). The column \code{nie} is the
+indirect association \eqn{\hat\alpha_A\hat\beta_M}; \code{te}, \code{se_te},
+\code{p_te} and \code{pm} are \code{NA} for a binary outcome.
 }
 \usage{
 \method{as.data.frame}{mma}(x, row.names = NULL, optional = FALSE, ...)

@@ -237,7 +237,8 @@ f_tr <- mma(dym, "A", "M", "Y", "S", "X", outcome_family = "binomial", outcome_s
 stopifnot(f_my$missing_data$order == "MY", f_ym$missing_data$order == "YM",
           f_ym2$missing_data$order == "MY", f_ym2$binary_diagnostics$n_MY == f_ym$binary_diagnostics$n_MY,
           f_tr$binary_diagnostics$max_weight <= 1 / 0.5^2 + 1e-12,
-          all(is.finite(f_my$effects$se[1:5])), all(is.finite(f_ym$effects$se[1:5])))
+          all(is.finite(f_my$effects$se[1:4])), all(is.finite(f_ym$effects$se[1:4])),
+          all(is.na(f_ym$effects[c("TE", "PM"), "estimate"])), is.na(f_ym$effects_or["TE", "OR"]))
 # (e) mma_scan with a binary outcome; keep_IF = FALSE; invalid inputs are rejected.
 scb <- mma_scan(dym, c("A", "X"), "M", "S", "Y", outcome_surrogate = "S_Y",
                 outcome_family = "binomial", mc_draws = 0)

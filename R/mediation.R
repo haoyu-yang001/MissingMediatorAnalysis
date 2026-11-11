@@ -21,17 +21,23 @@
 #' \eqn{M}, given these and \eqn{M}. Subjects with \eqn{Y} but no \eqn{M}
 #' are treated as missing \eqn{Y}.
 #'
-#' The natural indirect effect is \eqn{NIE = \alpha_A\beta_M}, the natural
-#' direct effect \eqn{NDE = \beta_A}, and the total effect
-#' \eqn{TE = NDE + NIE}. Both path estimators are asymptotically linear in the
+#' The indirect association is \eqn{\alpha_A\beta_M} (row \code{NIE} of
+#' \code{effects}; the name is kept for backward compatibility, but the product
+#' is reported as an association, not as a causal natural indirect effect), the
+#' direct association is \eqn{\beta_A} (row \code{NDE}), and, for a continuous
+#' outcome, the total association is \eqn{TE = NDE + NIE} and the proportion
+#' mediated \eqn{PM = NIE/TE}. For a binary outcome \code{TE} and \code{PM} are
+#' \code{NA}: log odds ratios of the direct and indirect associations do not add
+#' up to a total association. Both path estimators are asymptotically linear in the
 #' same \eqn{n} subjects, so their influence functions are stacked and the
-#' delta method gives a standard error for the NIE that includes
-#' \eqn{Cov(\hat\alpha_A, \hat\beta_M)}. Two tests of \eqn{H_0: NIE = 0} are
+#' delta method gives a standard error for \eqn{\alpha_A\beta_M} that includes
+#' \eqn{Cov(\hat\alpha_A, \hat\beta_M)}. Two tests of
+#' \eqn{H_0: \alpha_A\beta_M = 0} are
 #' reported: the delta-method (Sobel-type) Wald test and the joint-significance
 #' test \eqn{p = \max(p_\alpha, p_\beta)}.
 #'
 #' Besides the delta-method (Wald) interval, a Monte Carlo confidence interval
-#' for the NIE is reported. It draws \eqn{(\alpha_A^*, \beta_M^*)} from the
+#' for \eqn{\alpha_A\beta_M} is reported. It draws \eqn{(\alpha_A^*, \beta_M^*)} from the
 #' bivariate normal approximation to \eqn{(\hat\alpha_A, \hat\beta_M)},
 #' including their estimated covariance, and takes quantiles of
 #' \eqn{\alpha_A^*\beta_M^*}, so the interval reflects the skewness of a
@@ -50,16 +56,23 @@
 #' \beta_M M + X^\top\beta_X}, and both paths are defined as full-cohort
 #' projections (least squares of \eqn{M} on \eqn{Z = (1, A, X)}; logistic
 #' projection of \eqn{Y} on \eqn{(Z, M)}), which are also the complete-case
-#' targets when data are missing completely at random. \eqn{\beta}, NIE, NDE
-#' and TE are on the log odds ratio scale. The default
-#' (\code{outcome_method = "SeqSynSurr"}) is a sequential augmented inverse
-#' probability weighted (AIPW) estimator. Its consistency rests only on the
-#' missingness models: the surrogates and the working prediction
-#' models for \eqn{M} (normal linear in the surrogates and \eqn{Z}, clipped to
-#' the observed range of \eqn{M}) and for \eqn{Y} (logistic) affect precision,
-#' never the target. Both paths use the same missingness models;
-#' \eqn{\alpha} is the least-squares fit of \eqn{\hat m + w(M - \hat m)} on
-#' \eqn{Z}. \code{outcome_method = "IPW"} is the weighted complete-case fit with
+#' targets when data are missing completely at random. \eqn{\beta}, NIE and
+#' NDE are on the log odds ratio scale; TE and PM are \code{NA}. By default
+#' (\code{outcome_method = "SeqSynSurr"}, \code{alpha_method = "closed"}),
+#' \eqn{\beta_M} is estimated by a sequential augmented inverse probability
+#' weighted (AIPW) estimator, which requires correct models for the probability
+#' of being measured (missingness models) and positivity; the surrogates and the
+#' working prediction models for \eqn{M} (normal linear in the surrogates and
+#' \eqn{Z}, clipped to the observed range of \eqn{M}) and for \eqn{Y}
+#' (logistic) affect precision, never the target. \eqn{\alpha_A} is estimated
+#' in closed form by SynSurr with the surrogate columns plus the outcome, which
+#' requires a linear working model \eqn{E(M \mid Z, S, Y)}; the prediction
+#' models that generated the surrogates need not be correct.
+#' \code{alpha_method = "aipw"} instead estimates \eqn{\alpha} by the AIPW
+#' pseudo-outcome regression of \eqn{\hat m + w(M - \hat m)} on \eqn{Z}
+#' with the same missingness models, which drops the linearity assumption at
+#' the cost of precision (sensitivity analysis).
+#' \code{outcome_method = "IPW"} is the weighted complete-case fit with
 #' the same weights (Firth-penalized weighted logistic regression), and
 #' \code{"CC"} the unweighted complete-case fit. With \eqn{S} the
 #' \code{surrogate} columns, \code{outcome_surrogate} and any extra
@@ -145,7 +158,8 @@
 #' @param ps_trim optional lower bound for the fitted propensity. For a binary
 #'   outcome it is applied to each missingness model separately (a sensitivity
 #'   analysis for extreme weights; the influence functions ignore it).
-#' @param mc_draws number of Monte Carlo draws for the NIE interval; 0 skips it.
+#' @param mc_draws number of Monte Carlo draws for the interval of the indirect
+#'   association \eqn{\alpha_A\beta_M}; 0 skips it.
 #' @param na_action \code{"omit"} (default) drops, with a message, rows with
 #'   missing values in the exposure, covariates, surrogates or \code{ps_vars};
 #'   \code{"fail"} stops instead.
@@ -192,7 +206,8 @@
 #'   complete, its observation indicator and observed values otherwise; for a
 #'   continuous outcome partly missing, also their interactions with the
 #'   observation indicator), which
-#'   is efficient but requires \eqn{E(M \mid S, Z)} to be linear;
+#'   is efficient but requires the working model \eqn{E(M \mid Z, S, Y)} to be
+#'   linear (the prediction models of the surrogates need not be correct);
 #'   \code{"aipw"} uses the augmented inverse-probability-weighted
 #'   pseudo-outcome regression, valid whatever the prediction model but less
 #'   precise when the weights are large (sensitivity analysis).
@@ -200,12 +215,15 @@
 #'   sequential AIPW estimator for a general missing pattern (participants with
 #'   the outcome but no mediator are used); the default closed form treats them
 #'   as missing the outcome.
-#' @return An object of class \code{"mma"}. Besides the estimates, the tests of
-#'   \eqn{H_0: NIE = 0} include the p-value matching the Monte Carlo interval,
+#' @return An object of class \code{"mma"}. \code{effects} has rows
+#'   \code{alpha}, \code{beta}, \code{NIE} (indirect association
+#'   \eqn{\alpha_A\beta_M}), \code{NDE} (direct association \eqn{\beta_A}),
+#'   \code{TE} and \code{PM} (\code{NA} for a binary outcome). Besides the
+#'   estimates, the tests of \eqn{H_0: \alpha_A\beta_M = 0} include the p-value matching the Monte Carlo interval,
 #'   \eqn{2\min\{P(\alpha^*\beta^* < 0), P(\alpha^*\beta^* > 0)\}} under the
 #'   bivariate normal approximation, computed by numerical integration. Use
 #'   \code{as.data.frame()} for a one-row summary. For a binary outcome it also
-#'   contains \code{events}, \code{effects_or} (odds ratios),
+#'   contains \code{events}, \code{effects_or} (odds ratios; \code{NA} for TE),
 #'   \code{binary_diagnostics} and \code{missing_data} (the ordering used and
 #'   the missingness models).
 #' @examples
@@ -413,6 +431,14 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
   est <- c(alpha = a, beta = b, NIE = nie, NDE = c_dir, TE = te, PM = nie / te)
   effects <- .coef_table(est, sqrt(diag(V_eff)), conf_level)
   effects["PM", c("z", "p")] <- NA
+  if (binom) {
+    # On the log odds ratio scale the direct and indirect log odds ratios do not add up to a
+    # total association, and their ratio is not a proportion mediated: TE and PM are not
+    # reported (rows kept, set to NA, for backward compatibility).
+    effects[c("TE", "PM"), ] <- NA
+    V_eff[c("TE", "PM"), ] <- NA
+    V_eff[, c("TE", "PM")] <- NA
+  }
 
   p_joint <- max(effects["alpha", "p"], effects["beta", "p"])
   p_mc <- .product_p(c(a, b), V_eff[c("alpha", "beta"), c("alpha", "beta")])
@@ -464,8 +490,8 @@ mma <- function(data, exposure, mediator, outcome, surrogate,
     call = match.call()), class = "mma")
 }
 
-# Odds-ratio scale (exp) of beta, NIE, NDE and TE for a binary outcome; the
-# Monte Carlo interval of the NIE is used when available.
+# Odds-ratio scale (exp) of beta, NIE, NDE and TE for a binary outcome (TE is NA,
+# see mma()); the Monte Carlo interval of the NIE is used when available.
 .or_table <- function(effects, nie_ci) {
   r <- c("beta", "NIE", "NDE", "TE")
   e <- effects[r, c("estimate", "lower", "upper")]
@@ -491,7 +517,7 @@ print.mma <- function(x, digits = 4, ...) {
   cat(sprintf("  exposure-mediator: %s;  mediator-outcome: %s\n",
               x$methods[["mediator"]], x$methods[["outcome"]]))
   if (identical(x$outcome_family, "binomial"))
-    cat(sprintf("  binary outcome: %d events among subjects with mediator and outcome; beta, NIE, NDE, TE on the log odds ratio scale\n",
+    cat(sprintf("  binary outcome: %d events among subjects with mediator and outcome; beta, NIE and NDE on the log odds ratio scale\n",
                 x$events))
   if (!is.null(x$missing_data))
     cat(strwrap(paste("missing-data model:", x$missing_data$assumption), indent = 2, exdent = 4,
@@ -528,15 +554,21 @@ print.mma <- function(x, digits = 4, ...) {
                          "Report sensitivity analyses: refit with ps_trim (e.g. 0.02) and without the most influential subject."),
                   indent = 2, exdent = 4, width = 0.95 * getOption("width")), sep = "\n")
   }
+  cat("\n  NIE = alpha*beta, the indirect association; NDE = beta_A, the direct association\n")
+  if (identical(x$outcome_family, "binomial"))
+    cat(strwrap("TE and PM are not reported (NA) for a binary outcome: log odds ratios of the direct and indirect associations do not add up to a total association.",
+                indent = 2, exdent = 4, width = 0.95 * getOption("width")), sep = "\n")
+  else
+    cat("  TE = NDE + NIE (total association); PM = NIE / TE (proportion mediated)\n")
   cat("\n")
   print(signif(x$effects, digits))
   if (!is.null(x$effects_or)) {
     cat("\nOdds ratios\n")
     print(signif(x$effects_or, digits))
   }
-  cat(sprintf("\n%g%% confidence intervals for the NIE\n", 100 * x$conf_level))
+  cat(sprintf("\n%g%% confidence intervals for the indirect association (alpha*beta)\n", 100 * x$conf_level))
   print(x$nie_ci, digits = digits, row.names = FALSE)
-  cat("\nTests of H0: NIE = 0\n")
+  cat("\nTests of H0: alpha*beta = 0 (no indirect association)\n")
   print(x$tests, digits = digits, row.names = FALSE)
   invisible(x)
 }
